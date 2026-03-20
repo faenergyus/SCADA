@@ -52,7 +52,9 @@
         <!-- Header -->
         <div class="flex flex-wrap items-center gap-3 mb-6">
             <a href="index.html" class="text-gray-400 hover:text-fae-gold text-sm">&larr; Back to All Wells</a>
+            <button id="prevWell" class="well-nav-btn text-gray-400 hover:text-fae-gold text-xl px-2 py-0.5 disabled:opacity-30 disabled:cursor-default" disabled title="Previous well">&lsaquo;</button>
             <h1 class="text-2xl font-bold text-fae-gold" id="wellName">Loading...</h1>
+            <button id="nextWell" class="well-nav-btn text-gray-400 hover:text-fae-gold text-xl px-2 py-0.5 disabled:opacity-30 disabled:cursor-default" disabled title="Next well">&rsaquo;</button>
             <span id="commBadge" class="text-xs px-2 py-0.5 rounded-full"></span>
             <span id="runBadge" class="text-xs px-2 py-0.5 rounded-full"></span>
         </div>
@@ -670,11 +672,42 @@
         });
     });
 
+    // ── Well navigation (prev/next arrows) ──
+    async function loadWellNav() {
+        try {
+            var resp = await fetch('data/wells.json?t=' + Date.now());
+            if (!resp.ok) return;
+            var data = await resp.json();
+            var wells = (data.wells || []).map(function(w) { return w.NodeID; }).sort();
+            var idx = wells.indexOf(NODE_ID);
+            if (idx < 0) return;
+
+            var prevBtn = document.getElementById('prevWell');
+            var nextBtn = document.getElementById('nextWell');
+
+            if (idx > 0) {
+                prevBtn.disabled = false;
+                prevBtn.title = wells[idx - 1];
+                prevBtn.onclick = function() {
+                    window.location.href = 'well.html?id=' + encodeURIComponent(wells[idx - 1]);
+                };
+            }
+            if (idx < wells.length - 1) {
+                nextBtn.disabled = false;
+                nextBtn.title = wells[idx + 1];
+                nextBtn.onclick = function() {
+                    window.location.href = 'well.html?id=' + encodeURIComponent(wells[idx + 1]);
+                };
+            }
+        } catch(e) { /* silent */ }
+    }
+
     // ── Init ──
     if (NODE_ID) {
         loadWellDetails();
         loadCards();
         loadAlarms();
+        loadWellNav();
     }
     </script>
 </body>
