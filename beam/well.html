@@ -341,7 +341,7 @@
                 if (rodModel) {
                     faeCard = WaveEquation.calculateDownholeCard(
                         surfData.position, surfData.load, rodModel,
-                        { dampingFactor: 0.20, nHarmonics: 15 }
+                        { dampingFactor: 0.4 }
                     );
                 }
             }
@@ -359,8 +359,8 @@
             ' | Stroke: ' + v(card.StrokeLength, '"') +
             ' | Fillage: ' + vf(card.Fillage, 1, '%');
         if (faeCard && faeCard.meta) {
-            infoStr += ' | FAE Calc: ' + faeCard.meta.nHarmonics + ' harmonics, ζ=' + faeCard.meta.dampingFactor +
-                ', c=' + faeCard.meta.avgWaveSpeedFtS + ' ft/s';
+            infoStr += ' | FAE Calc: ' + faeCard.meta.method + ', ζ=' + faeCard.meta.dampingFactor +
+                ', c=' + faeCard.meta.avgWaveSpeedFtS + ' ft/s, Wr=' + faeCard.meta.buoyantRodWt + ' lbs';
         }
         document.getElementById('cardInfo').textContent = infoStr;
     }
