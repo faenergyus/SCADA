@@ -186,8 +186,9 @@ var WaveEquation = (function () {
             var sinBL = Math.sin(betaL);
 
             // Denominator D = cos(βL) + j·ζ_n·sin(βL)
-            // Use frequency-dependent damping: ζ_n scales with harmonic
-            var zeta_n = zeta;  // could scale: zeta * Math.sqrt(n)
+            // Frequency-dependent damping: higher harmonics get more damping
+            // This models viscous + Coulomb friction in the rod string
+            var zeta_n = zeta * Math.sqrt(n);
 
             var dR = cosBL;
             var dI = zeta_n * sinBL;
