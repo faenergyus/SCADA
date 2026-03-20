@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wells — Forty Acres Rod Status</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'fae-blue': '#1e3a5f',
+                        'fae-gold': '#c8a951',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        .well-row { transition: background 0.15s; }
+        .well-row:hover { background: rgba(200,169,81,0.08); }
+        .comm-ok { background: #22c55e; }
+        .comm-fail { background: #ef4444; }
+        .comm-unknown { background: #6b7280; }
+        .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+        .running { color: #22c55e; }
+        .idle { color: #eab308; }
+        .shutdown { color: #ef4444; }
+        .fillage-bar { height: 6px; border-radius: 3px; background: #374151; overflow: hidden; min-width: 60px; }
+        .fillage-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+        input[type="search"] { background: #1f2937; border: 1px solid #374151; }
+        input[type="search"]:focus { border-color: #c8a951; outline: none; }
+        .filter-btn { border: 1px solid #374151; }
+        .filter-btn.active { border-color: #c8a951; background: rgba(200,169,81,0.15); color: #c8a951; }
+        .sort-arrow { font-size: 0.6rem; margin-left: 4px; opacity: 0.5; }
+        .sort-arrow.active { opacity: 1; color: #c8a951; }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen">
+    <nav class="bg-fae-blue border-b border-fae-gold/30 px-4 py-3">
+        <div class="max-w-7xl mx-auto flex items-center justify-between flex-wrap gap-2">
+            <a href="index.html" class="text-xl font-bold text-fae-gold">Forty Acres Rod Status</a>
+            <div class="text-sm text-gray-400 flex items-center gap-4">
+                <span id="exportTime" class="text-gray-500"></span>
+                <span id="clock"></span>
+                <span class="text-gray-500 hidden sm:inline">Forty Acres Energy</span>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-4 py-6">
+        <!-- Summary cards -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+            <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                <div class="text-2xl font-bold" id="totalWells">&mdash;</div>
+                <div class="text-sm text-gray-400">Total Wells</div>
+            </div>
+            <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                <div class="text-2xl font-bold text-green-400" id="runningCount">&mdash;</div>
+                <div class="text-sm text-gray-400">Running</div>
+            </div>
+            <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                <div class="text-2xl font-bold text-yellow-400" id="idleCount">&mdash;</div>
+                <div class="text-sm text-gray-400">Idle</div>
+            </div>
+            <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                <div class="text-2xl font-bold text-red-400" id="downCount">&mdash;</div>
+                <div class="text-sm text-gray-400">Shutdown / Comm Fail</div>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="flex flex-wrap items-center gap-3 mb-4">
+            <input type="search" id="searchBox" placeholder="Search wells..."
+                class="rounded-lg px-3 py-2 text-sm text-gray-100 w-full sm:w-64">
+            <div class="flex flex-wrap gap-2">
+                <button class="filter-btn active text-sm px-3 py-1.5 rounded-lg text-gray-300" data-filter="all">All</button>
+                <button class="filter-btn text-sm px-3 py-1.5 rounded-lg text-gray-300" data-filter="running">Running</button>
+                <button class="filter-btn text-sm px-3 py-1.5 rounded-lg text-gray-300" data-filter="idle">Idle</button>
+                <button class="filter-btn text-sm px-3 py-1.5 rounded-lg text-gray-300" data-filter="shutdown">Shutdown</button>
+                <button class="filter-btn text-sm px-3 py-1.5 rounded-lg text-gray-300" data-filter="commfail">Comm Fail</button>
+            </div>
+            <button class="text-sm px-3 py-1.5 rounded-lg bg-fae-blue text-fae-gold border border-fae-gold/30 ml-auto"
+                onclick="loadWells()">Refresh</button>
+        </div>
+
+        <!-- Well table -->
+        <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="text-left text-gray-400 border-b border-gray-700">
+                    <th class="px-3 py-2 cursor-pointer select-none" onclick="sortBy('NodeID')">Well <span class="sort-arrow" id="sort-NodeID">&#9650;</span></th>
+                    <th class="px-3 py-2">Comm</th>
+                    <th class="px-3 py-2 cursor-pointer select-none" onclick="sortBy('RunStatus')">Run Status <span class="sort-arrow" id="sort-RunStatus">&#9650;</span></th>
+                    <th class="px-3 py-2 cursor-pointer select-none" onclick="sortBy('PumpFillage')">Fillage <span class="sort-arrow" id="sort-PumpFillage">&#9650;</span></th>
+                    <th class="px-3 py-2 cursor-pointer select-none" onclick="sortBy('InferredProd')">Inf. Prod <span class="sort-arrow" id="sort-InferredProd">&#9650;</span></th>
+                    <th class="px-3 py-2 cursor-pointer select-none" onclick="sortBy('TodayRuntime')">Runtime (hr) <span class="sort-arrow" id="sort-TodayRuntime">&#9650;</span></th>
+                    <th class="px-3 py-2 cursor-pointer select-none" onclick="sortBy('LastGoodScanTime')">Last Scan <span class="sort-arrow" id="sort-LastGoodScanTime">&#9650;</span></th>
+                    <th class="px-3 py-2 hidden lg:table-cell">Condition</th>
+                    <th class="px-3 py-2 hidden md:table-cell">Controller</th>
+                </tr>
+            </thead>
+            <tbody id="wellTableBody">
+                <tr><td colspan="9" class="px-3 py-8 text-center text-gray-500">Loading...</td></tr>
+            </tbody>
+        </table>
+        </div>
+    </main>
+
+    <script>
+    let wells = [];
+    let currentSort = { key: 'NodeID', asc: true };
+    let currentFilter = 'all';
+
+    async function loadWells() {
+        try {
+            const resp = await fetch('data/wells.json');
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            const data = await resp.json();
+
+            // Handle _meta
+            if (data._meta && data._meta.exported_at) {
+                document.getElementById('exportTime').textContent =
+                    'Data as of: ' + new Date(data._meta.exported_at).toLocaleString();
+            }
+
+            // Wells array: either data.wells or data itself (if array)
+            wells = Array.isArray(data) ? data : (data.wells || []);
+            updateSummary();
+            renderTable();
+        } catch (e) {
+            document.getElementById('wellTableBody').innerHTML =
+                '<tr><td colspan="9" class="px-3 py-8 text-center text-red-400">Failed to load: ' + e.message + '</td></tr>';
+        }
+    }
+
+    function updateSummary() {
+        const enabled = wells.filter(w => w.Enabled !== false);
+        document.getElementById('totalWells').textContent = enabled.length;
+        document.getElementById('runningCount').textContent =
+            enabled.filter(w => w.RunStatus && w.RunStatus.toLowerCase().includes('running')).length;
+        document.getElementById('idleCount').textContent =
+            enabled.filter(w => w.RunStatus && w.RunStatus.toLowerCase().includes('idle')).length;
+        const shutdowns = enabled.filter(w =>
+            (w.RunStatus && w.RunStatus.toLowerCase().includes('shutdown')) ||
+            (w.CommStatus && w.CommStatus !== 'OK'));
+        document.getElementById('downCount').textContent = shutdowns.length;
+    }
+
+    function getStatusClass(runStatus) {
+        if (!runStatus) return 'text-gray-500';
+        const s = runStatus.toLowerCase();
+        if (s.includes('running')) return 'running';
+        if (s.includes('idle')) return 'idle';
+        if (s.includes('shutdown')) return 'shutdown';
+        return 'text-gray-500';
+    }
+
+    function getCommDot(commStatus) {
+        if (commStatus === 'OK') return '<span class="dot comm-ok" title="OK"></span>';
+        if (!commStatus) return '<span class="dot comm-unknown" title="Unknown"></span>';
+        return '<span class="dot comm-fail" title="' + commStatus + '"></span>';
+    }
+
+    function fillageBar(fillage) {
+        if (fillage == null || fillage === 0) return '<span class="text-gray-500">&mdash;</span>';
+        var color = '#22c55e';
+        if (fillage < 40) color = '#ef4444';
+        else if (fillage < 70) color = '#eab308';
+        return '<div class="flex items-center gap-2">' +
+            '<div class="fillage-bar"><div class="fillage-fill" style="width:' + fillage + '%;background:' + color + '"></div></div>' +
+            '<span>' + fillage + '%</span></div>';
+    }
+
+    function timeSince(isoStr) {
+        if (!isoStr) return '<span class="text-gray-500">Never</span>';
+        var d = new Date(isoStr);
+        if (isNaN(d.getTime())) return '<span class="text-gray-500">Invalid</span>';
+        var mins = Math.floor((Date.now() - d) / 60000);
+        if (mins < 0) return 'Just now';
+        if (mins < 1) return 'Just now';
+        if (mins < 60) return mins + 'm ago';
+        var hrs = Math.floor(mins / 60);
+        if (hrs < 24) return hrs + 'h ago';
+        var days = Math.floor(hrs / 24);
+        return '<span class="text-yellow-400">' + days + 'd ago</span>';
+    }
+
+    function matchesFilter(w) {
+        if (currentFilter === 'all') return true;
+        var s = (w.RunStatus || '').toLowerCase();
+        var c = (w.CommStatus || '');
+        if (currentFilter === 'running') return s.includes('running');
+        if (currentFilter === 'idle') return s.includes('idle');
+        if (currentFilter === 'shutdown') return s.includes('shutdown');
+        if (currentFilter === 'commfail') return c !== 'OK';
+        return true;
+    }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function renderTable() {
+        var search = document.getElementById('searchBox').value.toLowerCase();
+        var filtered = wells
+            .filter(function(w) { return w.Enabled !== false; })
+            .filter(matchesFilter)
+            .filter(function(w) {
+                if (!search) return true;
+                return (w.NodeID || '').toLowerCase().includes(search) ||
+                    (w.LastAnalCondition || '').toLowerCase().includes(search) ||
+                    (w.RunStatus || '').toLowerCase().includes(search) ||
+                    (w.POCTypeDesc || '').toLowerCase().includes(search);
+            });
+
+        // Sort
+        filtered.sort(function(a, b) {
+            var va = a[currentSort.key], vb = b[currentSort.key];
+            if (va == null) va = '';
+            if (vb == null) vb = '';
+            if (typeof va === 'number' && typeof vb === 'number') {
+                return currentSort.asc ? va - vb : vb - va;
+            }
+            return currentSort.asc
+                ? String(va).localeCompare(String(vb))
+                : String(vb).localeCompare(String(va));
+        });
+
+        // Update sort arrows
+        document.querySelectorAll('.sort-arrow').forEach(function(el) {
+            el.classList.remove('active');
+            el.innerHTML = '&#9650;';
+        });
+        var activeArrow = document.getElementById('sort-' + currentSort.key);
+        if (activeArrow) {
+            activeArrow.classList.add('active');
+            activeArrow.innerHTML = currentSort.asc ? '&#9650;' : '&#9660;';
+        }
+
+        var tbody = document.getElementById('wellTableBody');
+        if (filtered.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="9" class="px-3 py-8 text-center text-gray-500">No wells match</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = filtered.map(function(w) {
+            var encodedId = encodeURIComponent(w.NodeID);
+            return '<tr class="well-row border-b border-gray-800 cursor-pointer" onclick="window.location=\'well.html?id=' + encodedId + '\'">' +
+                '<td class="px-3 py-2 font-medium text-fae-gold">' + escapeHtml(w.NodeID) + '</td>' +
+                '<td class="px-3 py-2">' + getCommDot(w.CommStatus) + '</td>' +
+                '<td class="px-3 py-2 ' + getStatusClass(w.RunStatus) + '">' + (w.RunStatus || '&mdash;') + '</td>' +
+                '<td class="px-3 py-2">' + fillageBar(w.PumpFillage) + '</td>' +
+                '<td class="px-3 py-2">' + (w.InferredProd != null ? w.InferredProd.toFixed(1) : '&mdash;') + '</td>' +
+                '<td class="px-3 py-2">' + (w.TodayRuntime != null ? w.TodayRuntime.toFixed(1) : '&mdash;') + '</td>' +
+                '<td class="px-3 py-2">' + timeSince(w.LastGoodScanTime) + '</td>' +
+                '<td class="px-3 py-2 text-xs max-w-[200px] truncate hidden lg:table-cell">' + escapeHtml(w.LastAnalCondition || '') + (!w.LastAnalCondition ? '&mdash;' : '') + '</td>' +
+                '<td class="px-3 py-2 text-xs text-gray-400 hidden md:table-cell">' + escapeHtml(w.POCTypeDesc || '') + (!w.POCTypeDesc ? '&mdash;' : '') + '</td>' +
+            '</tr>';
+        }).join('');
+    }
+
+    function sortBy(key) {
+        if (currentSort.key === key) {
+            currentSort.asc = !currentSort.asc;
+        } else {
+            currentSort.key = key;
+            currentSort.asc = true;
+        }
+        renderTable();
+    }
+
+    // Filter buttons
+    document.querySelectorAll('.filter-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.filter-btn').forEach(function(b) { b.classList.remove('active'); });
+            btn.classList.add('active');
+            currentFilter = btn.dataset.filter;
+            renderTable();
+        });
+    });
+
+    // Search
+    document.getElementById('searchBox').addEventListener('input', renderTable);
+
+    // Clock
+    function updateClock() {
+        document.getElementById('clock').textContent = new Date().toLocaleString();
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    // Load and auto-refresh every 5 minutes
+    loadWells();
+    setInterval(loadWells, 300000);
+    </script>
+</body>
+</html>

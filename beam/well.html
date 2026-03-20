@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Well Detail — Forty Acres Rod Status</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'fae-blue': '#1e3a5f',
+                        'fae-gold': '#c8a951',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        .info-card { background: #1f2937; border: 1px solid #374151; border-radius: 0.5rem; padding: 1rem; }
+        .info-label { font-size: 0.75rem; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; }
+        .info-value { font-size: 1.1rem; font-weight: 600; }
+        .card-nav-btn { background: #374151; border: 1px solid #4b5563; border-radius: 0.375rem; padding: 0.25rem 0.75rem; font-size: 0.875rem; cursor: pointer; color: #d1d5db; }
+        .card-nav-btn:hover { background: #4b5563; }
+        .card-nav-btn.active { background: rgba(200,169,81,0.2); border-color: #c8a951; color: #c8a951; }
+        .tab { cursor: pointer; padding: 0.5rem 1rem; border-bottom: 2px solid transparent; color: #9ca3af; }
+        .tab:hover { color: #d1d5db; }
+        .tab.active { color: #c8a951; border-color: #c8a951; }
+        .alarm-row:nth-child(odd) { background: rgba(255,255,255,0.02); }
+        .detail-row { display: flex; justify-content: space-between; padding: 0.25rem 0; border-bottom: 1px solid #1f2937; }
+        .detail-row:last-child { border-bottom: none; }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen">
+    <nav class="bg-fae-blue border-b border-fae-gold/30 px-4 py-3">
+        <div class="max-w-7xl mx-auto flex items-center justify-between flex-wrap gap-2">
+            <a href="index.html" class="text-xl font-bold text-fae-gold">Forty Acres Rod Status</a>
+            <div class="text-sm text-gray-400 flex items-center gap-4">
+                <span id="exportTime" class="text-gray-500"></span>
+                <span id="clock"></span>
+                <span class="text-gray-500 hidden sm:inline">Forty Acres Energy</span>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-4 py-6">
+        <!-- Header -->
+        <div class="flex flex-wrap items-center gap-3 mb-6">
+            <a href="index.html" class="text-gray-400 hover:text-fae-gold text-sm">&larr; Back to All Wells</a>
+            <h1 class="text-2xl font-bold text-fae-gold" id="wellName">Loading...</h1>
+            <span id="commBadge" class="text-xs px-2 py-0.5 rounded-full"></span>
+            <span id="runBadge" class="text-xs px-2 py-0.5 rounded-full"></span>
+        </div>
+
+        <!-- Status cards row -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6" id="statusCards">
+            <div class="info-card"><div class="info-label">Loading...</div></div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="flex border-b border-gray-700 mb-6 overflow-x-auto">
+            <div class="tab active whitespace-nowrap" data-tab="cards">Dyno Cards</div>
+            <div class="tab whitespace-nowrap" data-tab="analysis">Analysis</div>
+            <div class="tab whitespace-nowrap" data-tab="wellinfo">Well Info</div>
+            <div class="tab whitespace-nowrap" data-tab="alarms">Alarms</div>
+        </div>
+
+        <!-- Tab: Dyno Cards -->
+        <div id="tab-cards">
+            <div class="flex flex-wrap items-center gap-3 mb-4">
+                <span class="text-sm text-gray-400">Card:</span>
+                <div id="cardNav" class="flex flex-wrap gap-2"></div>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div class="info-card">
+                    <div class="text-sm text-gray-400 mb-2">Surface Card</div>
+                    <div id="surfaceCardPlot" style="height:350px;"></div>
+                </div>
+                <div class="info-card">
+                    <div class="text-sm text-gray-400 mb-2">Downhole Card</div>
+                    <div id="downholeCardPlot" style="height:350px;"></div>
+                </div>
+            </div>
+            <div class="mt-3 text-sm text-gray-400" id="cardInfo"></div>
+        </div>
+
+        <!-- Tab: Analysis -->
+        <div id="tab-analysis" class="hidden">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="analysisContent">
+                <div class="info-card"><div class="text-gray-500">Loading...</div></div>
+            </div>
+        </div>
+
+        <!-- Tab: Well Info -->
+        <div id="tab-wellinfo" class="hidden">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="wellInfoContent">
+                <div class="info-card"><div class="text-gray-500">Loading...</div></div>
+            </div>
+        </div>
+
+        <!-- Tab: Alarms -->
+        <div id="tab-alarms" class="hidden">
+            <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="text-left text-gray-400 border-b border-gray-700">
+                        <th class="px-3 py-2">Date</th>
+                        <th class="px-3 py-2">Description</th>
+                    </tr>
+                </thead>
+                <tbody id="alarmBody">
+                    <tr><td colspan="2" class="px-3 py-4 text-gray-500">Loading...</td></tr>
+                </tbody>
+            </table>
+            </div>
+        </div>
+    </main>
+
+    <script>
+    // Get well ID from URL
+    var params = new URLSearchParams(window.location.search);
+    var NODE_ID = decodeURIComponent(params.get('id') || '');
+    if (!NODE_ID) {
+        document.getElementById('wellName').textContent = 'No well ID specified';
+    } else {
+        document.getElementById('wellName').textContent = NODE_ID;
+        document.title = NODE_ID + ' — Forty Acres Rod Status';
+    }
+
+    var cards = [];
+    var currentCardIdx = 0;
+
+    // Clock
+    function updateClock() {
+        document.getElementById('clock').textContent = new Date().toLocaleString();
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    function v(val, suffix) {
+        if (val == null || val === '') return '&mdash;';
+        return val + (suffix || '');
+    }
+
+    function vf(val, decimals, suffix) {
+        if (val == null || val === '') return '&mdash;';
+        return Number(val).toFixed(decimals || 0) + (suffix || '');
+    }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    // ── Load well detail data ──
+    async function loadWellDetails() {
+        try {
+            var resp = await fetch('data/well_details.json');
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            var allDetails = await resp.json();
+
+            // Handle _meta
+            if (allDetails._meta && allDetails._meta.exported_at) {
+                document.getElementById('exportTime').textContent =
+                    'Data as of: ' + new Date(allDetails._meta.exported_at).toLocaleString();
+            }
+
+            // well_details.json is a dict keyed by NodeID, each value has {master, well_details, xdiag_last}
+            var wellData = allDetails[NODE_ID];
+
+            if (!wellData) {
+                document.getElementById('statusCards').innerHTML =
+                    '<div class="info-card col-span-full"><div class="text-red-400">Well not found in data</div></div>';
+                return;
+            }
+
+            var master = wellData.master || wellData;
+            renderStatus(master);
+            renderAnalysis(wellData.xdiag_last || wellData.xdiag || {});
+            renderWellInfo(wellData.well_details || wellData.details || {}, master);
+        } catch (e) {
+            document.getElementById('statusCards').innerHTML =
+                '<div class="info-card col-span-full"><div class="text-red-400">Failed to load well details: ' + e.message + '</div></div>';
+        }
+    }
+
+    async function loadCards() {
+        try {
+            var resp = await fetch('data/cards.json');
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            var allCards = await resp.json();
+            // cards.json is a dict keyed by NodeID, each value is an array of cards
+            cards = Array.isArray(allCards)
+                ? allCards.filter(function(c) { return c.NodeID === NODE_ID; })
+                : (allCards[NODE_ID] || []);
+
+            renderCardNav();
+            if (cards.length > 0) {
+                selectCard(0);
+            } else {
+                document.getElementById('surfaceCardPlot').innerHTML =
+                    '<div class="text-gray-500 text-center py-12">No dyno cards available</div>';
+                document.getElementById('downholeCardPlot').innerHTML =
+                    '<div class="text-gray-500 text-center py-12">&mdash;</div>';
+                document.getElementById('cardInfo').textContent = '';
+            }
+        } catch (e) {
+            document.getElementById('surfaceCardPlot').innerHTML =
+                '<div class="text-gray-500 text-center py-12">Failed to load cards: ' + e.message + '</div>';
+            document.getElementById('downholeCardPlot').innerHTML = '';
+        }
+    }
+
+    async function loadAlarms() {
+        try {
+            var resp = await fetch('data/alarms.json');
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            var allAlarms = await resp.json();
+            var alarmsList = Array.isArray(allAlarms) ? allAlarms : (allAlarms.alarms || []);
+
+            // Filter to this well
+            var wellAlarms = alarmsList.filter(function(a) {
+                return a.NodeID === NODE_ID;
+            });
+
+            var tbody = document.getElementById('alarmBody');
+            if (wellAlarms.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="2" class="px-3 py-4 text-gray-500">No alarms in last 90 days</td></tr>';
+                return;
+            }
+            tbody.innerHTML = wellAlarms.map(function(a) {
+                var dateStr = a.Date ? new Date(a.Date).toLocaleString() : '&mdash;';
+                return '<tr class="alarm-row border-b border-gray-800">' +
+                    '<td class="px-3 py-2 text-gray-300 whitespace-nowrap">' + dateStr + '</td>' +
+                    '<td class="px-3 py-2">' + escapeHtml(a.Description || '') + (!a.Description ? '&mdash;' : '') + '</td>' +
+                '</tr>';
+            }).join('');
+        } catch (e) {
+            document.getElementById('alarmBody').innerHTML =
+                '<tr><td colspan="2" class="px-3 py-4 text-red-400">Failed to load alarms: ' + e.message + '</td></tr>';
+        }
+    }
+
+    // ── Render status cards ──
+    function renderStatus(m) {
+        // Comm badge
+        var cb = document.getElementById('commBadge');
+        cb.textContent = m.CommStatus || 'Unknown';
+        cb.className = 'text-xs px-2 py-0.5 rounded-full ' +
+            (m.CommStatus === 'OK' ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300');
+
+        // Run badge
+        var rb = document.getElementById('runBadge');
+        rb.textContent = m.RunStatus || '&mdash;';
+        var rs = (m.RunStatus || '').toLowerCase();
+        rb.className = 'text-xs px-2 py-0.5 rounded-full ' +
+            (rs.includes('running') ? 'bg-green-900 text-green-300' :
+             rs.includes('idle') ? 'bg-yellow-900 text-yellow-300' :
+             'bg-red-900 text-red-300');
+
+        var items = [
+            { label: 'Pump Fillage', value: vf(m.PumpFillage, 0, '%') },
+            { label: 'Inferred Prod', value: vf(m.InferredProd, 1, ' bbl') },
+            { label: 'Today Runtime', value: vf(m.TodayRuntime, 1, ' hr') },
+            { label: 'Yesterday RT%', value: vf(m.YestRuntimePct, 0, '%') },
+            { label: 'Last Scan', value: m.LastGoodScanTime ? new Date(m.LastGoodScanTime).toLocaleString() : 'Never' },
+            { label: 'Condition', value: m.LastAnalCondition || '&mdash;' },
+        ];
+        document.getElementById('statusCards').innerHTML = items.map(function(i) {
+            return '<div class="info-card">' +
+                '<div class="info-label">' + i.label + '</div>' +
+                '<div class="info-value">' + i.value + '</div>' +
+            '</div>';
+        }).join('');
+    }
+
+    // ── Dyno card navigation ──
+    function renderCardNav() {
+        var nav = document.getElementById('cardNav');
+        if (cards.length === 0) {
+            nav.innerHTML = '<span class="text-gray-500 text-sm">No cards available</span>';
+            return;
+        }
+        nav.innerHTML = cards.slice(0, 20).map(function(c, i) {
+            var d = new Date(c.Date);
+            var label = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+            var typeMap = { S: 'Scan', N: 'Analysis', V: 'VFD', P: 'POC' };
+            var typeLabel = typeMap[c.CardType] || c.CardType || '?';
+            var typeBadge = c.CardType || '?';
+            return '<button class="card-nav-btn' + (i === 0 ? ' active' : '') + '" data-idx="' + i + '">' +
+                label + ' <span class="text-xs opacity-60">(' + typeBadge + ')</span></button>';
+        }).join('');
+
+        nav.querySelectorAll('button').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                selectCard(parseInt(btn.dataset.idx));
+            });
+        });
+    }
+
+    function selectCard(idx) {
+        currentCardIdx = idx;
+        document.querySelectorAll('#cardNav button').forEach(function(btn, i) {
+            btn.classList.toggle('active', i === idx);
+        });
+        var card = cards[idx];
+
+        // Surface card
+        var surfData = card.SurfaceCardB || card.SurfaceCard || null;
+        plotCard('surfaceCardPlot', surfData, '#c8a951');
+
+        // Downhole card
+        var dhData = card.DownholeCardB || card.POCDownholeCardB || card.DownholeCard || null;
+        plotCard('downholeCardPlot', dhData, '#22c55e');
+
+        // Info below charts
+        var infoStr = 'SPM: ' + vf(card.SPM, 1) +
+            ' | Stroke: ' + v(card.StrokeLength, '"') +
+            ' | Fillage: ' + vf(card.Fillage, 1, '%');
+        document.getElementById('cardInfo').textContent = infoStr;
+    }
+
+    function plotCard(divId, cardData, color) {
+        var el = document.getElementById(divId);
+        if (!cardData || !cardData.position || cardData.position.length === 0) {
+            el.innerHTML = '<div class="text-gray-500 text-center py-12">No data</div>';
+            return;
+        }
+
+        var trace = {
+            x: cardData.position,
+            y: cardData.load,
+            mode: 'lines',
+            line: { color: color, width: 2 },
+            fill: 'toself',
+            fillcolor: hexToRgba(color, 0.08),
+        };
+
+        var layout = {
+            paper_bgcolor: 'transparent',
+            plot_bgcolor: 'transparent',
+            margin: { t: 10, r: 20, b: 40, l: 60 },
+            xaxis: { title: 'Position (in)', color: '#9ca3af', gridcolor: '#374151' },
+            yaxis: { title: 'Load (lbs)', color: '#9ca3af', gridcolor: '#374151' },
+            font: { color: '#9ca3af' },
+        };
+
+        Plotly.newPlot(el, [trace], layout, { responsive: true, displayModeBar: false });
+    }
+
+    function hexToRgba(hex, alpha) {
+        var r = parseInt(hex.slice(1, 3), 16);
+        var g = parseInt(hex.slice(3, 5), 16);
+        var b = parseInt(hex.slice(5, 7), 16);
+        return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+    }
+
+    // ── Analysis tab ──
+    function renderAnalysis(x) {
+        var el = document.getElementById('analysisContent');
+        if (!x || (!x.PumpCondition && !x.PumpCond1 && !x.FillagePct && !x.NetProd)) {
+            el.innerHTML = '<div class="text-gray-500 col-span-full">No XDiag analysis available</div>';
+            return;
+        }
+        var groups = [
+            { title: 'Pump Condition', items: [
+                ['Condition', x.PumpCondition || ((x.PumpCond1 || '') + ' ' + (x.PumpCond2 || '')).trim() || null],
+                ['Fillage', vf(x.FillagePct, 0, '%')],
+                ['Pump Efficiency', vf(x.PumpEffPct, 0, '%')],
+                ['System Efficiency', vf(x.SystemEffPct, 0, '%')],
+                ['Pump Stroke', v(x.PumpStroke)],
+                ['Pump Size', v(x.PumpSize)],
+            ]},
+            { title: 'Production', items: [
+                ['Net Prod', vf(x.NetProd, 1, ' bbl')],
+                ['Gross Prod', vf(x.GrossProd, 1, ' bbl')],
+                ['Water Cut', vf(x.WaterCutPct, 0, '%')],
+                ['Fluid Level', vf(x.FluidLevelXDiag, 0, ' ft')],
+                ['PIP', vf(x.PumpIntakePressure, 0, ' psi')],
+            ]},
+            { title: 'Loads & Torque', items: [
+                ['PPRL', vf(x.PPRL, 0, ' lbs')],
+                ['MPRL', vf(x.MPRL, 0, ' lbs')],
+                ['Gearbox Load', vf(x.GearBoxLoadPct, 0, '%')],
+                ['Peak GB Torque', v(x.PeakGBTorque)],
+                ['Unit Struct Load', vf(x.UnitStructLoad, 0, '%')],
+                ['Motor Load', vf(x.MotorLoad, 0, '%')],
+            ]},
+            { title: 'Diagnostics', items: [
+                ['Downhole Analysis', v(x.DownholeAnalysis)],
+                ['Rod Analysis', v(x.RodAnalysis)],
+                ['Surface Analysis', v(x.SurfaceAnalysis)],
+                ['Tubing Leak', x.TubingLeak != null ? (x.TubingLeak ? 'Yes' : 'No') : '&mdash;'],
+                ['Balance Unit', x.BalanceUnit != null ? (x.BalanceUnit ? 'Yes' : 'No') : '&mdash;'],
+            ]},
+        ];
+        el.innerHTML = groups.map(function(g) {
+            return '<div class="info-card">' +
+                '<div class="text-fae-gold font-semibold mb-3">' + g.title + '</div>' +
+                g.items.map(function(item) {
+                    var label = item[0], val = item[1];
+                    return '<div class="detail-row">' +
+                        '<span class="text-gray-400 text-sm">' + label + '</span>' +
+                        '<span class="text-sm">' + (val || '&mdash;') + '</span>' +
+                    '</div>';
+                }).join('') +
+            '</div>';
+        }).join('');
+    }
+
+    // ── Well Info tab ──
+    function renderWellInfo(d, m) {
+        var el = document.getElementById('wellInfoContent');
+        if (!d) {
+            el.innerHTML = '<div class="text-gray-500 col-span-full">No well details available</div>';
+            return;
+        }
+        var groups = [
+            { title: 'Downhole', items: [
+                ['Pump Depth', vf(d.PumpDepth, 0, ' ft')],
+                ['Plunger Diam', v(d.PlungerDiam)],
+                ['Pump Type', v(d.PumpType)],
+                ['Pump Barrel Len', v(d.PumpBarrelLength)],
+                ['Top Perf', vf(d.TopPerf, 0, ' ft')],
+                ['Bot Perf', vf(d.BotPerf, 0, ' ft')],
+                ['Tubing Anchored', d.TubingAnchored != null ? (d.TubingAnchored ? 'Yes' : 'No') : '&mdash;'],
+            ]},
+            { title: 'Surface', items: [
+                ['Pumping Unit', v(d.PumpingUnitID)],
+                ['Stroke Length', v(d.StrokeLength)],
+                ['SPM', v(d.SPM)],
+                ['Motor HP', v(d.MotorHP)],
+                ['Rotation', v(d.Rotation)],
+            ]},
+            { title: 'Pressures & Fluids', items: [
+                ['Tubing Pressure', vf(d.TubingPressure, 0, ' psi')],
+                ['Casing Pressure', vf(d.CasingPressure, 0, ' psi')],
+                ['Water Cut', vf(d.WaterCut, 0, '%')],
+                ['Water SG', v(d.WaterSG)],
+                ['Oil API', v(d.OilAPIGravity)],
+                ['Fluid Level', vf(d.FluidLevel, 0, ' ft')],
+                ['Fluid Temp', v(d.FluidTemp)],
+            ]},
+            { title: 'Rod String', items: [
+                ['Num Rod Sections', v(d.NumRodSections)],
+                ['Total Rod Length', vf(d.TotalRodLength, 0, ' ft')],
+                ['Peak Load', vf(d.PeakLoad, 0, ' lbs')],
+                ['Min Load', vf(d.MinLoad, 0, ' lbs')],
+            ]},
+        ];
+        el.innerHTML = groups.map(function(g) {
+            return '<div class="info-card">' +
+                '<div class="text-fae-gold font-semibold mb-3">' + g.title + '</div>' +
+                g.items.map(function(item) {
+                    var label = item[0], val = item[1];
+                    return '<div class="detail-row">' +
+                        '<span class="text-gray-400 text-sm">' + label + '</span>' +
+                        '<span class="text-sm">' + (val || '&mdash;') + '</span>' +
+                    '</div>';
+                }).join('') +
+            '</div>';
+        }).join('');
+    }
+
+    // ── Tabs ──
+    document.querySelectorAll('.tab').forEach(function(tab) {
+        tab.addEventListener('click', function() {
+            document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+            tab.classList.add('active');
+            ['cards', 'analysis', 'wellinfo', 'alarms'].forEach(function(id) {
+                document.getElementById('tab-' + id).classList.toggle('hidden', id !== tab.dataset.tab);
+            });
+        });
+    });
+
+    // ── Init ──
+    if (NODE_ID) {
+        loadWellDetails();
+        loadCards();
+        loadAlarms();
+    }
+    </script>
+</body>
+</html>
