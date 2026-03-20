@@ -80,6 +80,7 @@
                 <button class="filter-btn text-sm px-3 py-1.5 rounded-lg text-gray-300" data-filter="running">Running</button>
                 <button class="filter-btn text-sm px-3 py-1.5 rounded-lg text-gray-300" data-filter="idle">Idle</button>
                 <button class="filter-btn text-sm px-3 py-1.5 rounded-lg text-gray-300" data-filter="shutdown">Shutdown</button>
+                <button class="filter-btn text-sm px-3 py-1.5 rounded-lg text-gray-300" data-filter="commgood">Comm Good</button>
                 <button class="filter-btn text-sm px-3 py-1.5 rounded-lg text-gray-300" data-filter="commfail">Comm Fail</button>
             </div>
             <button class="text-sm px-3 py-1.5 rounded-lg bg-fae-blue text-fae-gold border border-fae-gold/30 ml-auto"
@@ -195,6 +196,7 @@
         if (currentFilter === 'running') return s.includes('running');
         if (currentFilter === 'idle') return s.includes('idle');
         if (currentFilter === 'shutdown') return s.includes('shutdown');
+        if (currentFilter === 'commgood') return c === 'OK';
         if (currentFilter === 'commfail') return c !== 'OK';
         return true;
     }

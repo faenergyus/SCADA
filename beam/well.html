@@ -34,6 +34,8 @@
         .alarm-row:nth-child(odd) { background: rgba(255,255,255,0.02); }
         .detail-row { display: flex; justify-content: space-between; padding: 0.25rem 0; border-bottom: 1px solid #1f2937; }
         .detail-row:last-child { border-bottom: none; }
+        .filter-btn { border: 1px solid #374151; }
+        .filter-btn.active { border-color: #c8a951; background: rgba(200,169,81,0.15); color: #c8a951; }
     </style>
 </head>
 <body class="bg-gray-900 text-gray-100 min-h-screen">
@@ -50,13 +52,24 @@
 
     <main class="max-w-7xl mx-auto px-4 py-6">
         <!-- Header -->
-        <div class="flex flex-wrap items-center gap-3 mb-6">
+        <div class="flex flex-wrap items-center gap-2 mb-3">
             <a href="index.html" class="text-gray-400 hover:text-fae-gold text-sm">&larr; Back to All Wells</a>
+            <div class="flex flex-wrap gap-1.5 ml-auto" id="wellFilterBar">
+                <button class="filter-btn active text-xs px-2.5 py-1 rounded-lg text-gray-300" data-filter="all">All</button>
+                <button class="filter-btn text-xs px-2.5 py-1 rounded-lg text-gray-300" data-filter="running">Running</button>
+                <button class="filter-btn text-xs px-2.5 py-1 rounded-lg text-gray-300" data-filter="idle">Idle</button>
+                <button class="filter-btn text-xs px-2.5 py-1 rounded-lg text-gray-300" data-filter="shutdown">Shutdown</button>
+                <button class="filter-btn text-xs px-2.5 py-1 rounded-lg text-gray-300" data-filter="commgood">Comm Good</button>
+                <button class="filter-btn text-xs px-2.5 py-1 rounded-lg text-gray-300" data-filter="commfail">Comm Fail</button>
+            </div>
+        </div>
+        <div class="flex flex-wrap items-center gap-3 mb-6">
             <button id="prevWell" class="well-nav-btn text-gray-400 hover:text-fae-gold text-xl px-2 py-0.5 disabled:opacity-30 disabled:cursor-default" disabled title="Previous well">&lsaquo;</button>
             <h1 class="text-2xl font-bold text-fae-gold" id="wellName">Loading...</h1>
             <button id="nextWell" class="well-nav-btn text-gray-400 hover:text-fae-gold text-xl px-2 py-0.5 disabled:opacity-30 disabled:cursor-default" disabled title="Next well">&rsaquo;</button>
             <span id="commBadge" class="text-xs px-2 py-0.5 rounded-full"></span>
             <span id="runBadge" class="text-xs px-2 py-0.5 rounded-full"></span>
+            <span id="wellPosition" class="text-xs text-gray-500 ml-auto"></span>
         </div>
 
         <!-- Status cards row -->
@@ -672,35 +685,95 @@
         });
     });
 
-    // ── Well navigation (prev/next arrows) ──
+    // ── Well navigation (prev/next arrows with filter) ──
+    var allWellsData = [];  // raw wells array from wells.json
+    var wellFilter = 'all';
+
+    function wellMatchesFilter(w) {
+        if (wellFilter === 'all') return true;
+        var s = (w.RunStatus || '').toLowerCase();
+        var c = (w.CommStatus || '');
+        if (wellFilter === 'running') return s.includes('running');
+        if (wellFilter === 'idle') return s.includes('idle');
+        if (wellFilter === 'shutdown') return s.includes('shutdown');
+        if (wellFilter === 'commgood') return c === 'OK';
+        if (wellFilter === 'commfail') return c !== 'OK';
+        return true;
+    }
+
+    function updateWellNav() {
+        var filtered = allWellsData
+            .filter(function(w) { return w.Enabled !== false; })
+            .filter(wellMatchesFilter)
+            .map(function(w) { return w.NodeID; })
+            .sort();
+        var idx = filtered.indexOf(NODE_ID);
+
+        var prevBtn = document.getElementById('prevWell');
+        var nextBtn = document.getElementById('nextWell');
+        var posEl = document.getElementById('wellPosition');
+
+        // Reset
+        prevBtn.disabled = true;
+        prevBtn.title = 'Previous well';
+        prevBtn.onclick = null;
+        nextBtn.disabled = true;
+        nextBtn.title = 'Next well';
+        nextBtn.onclick = null;
+
+        if (idx < 0) {
+            posEl.textContent = 'Not in filter (' + filtered.length + ' wells)';
+            return;
+        }
+
+        posEl.textContent = (idx + 1) + ' / ' + filtered.length;
+
+        var filterParam = wellFilter !== 'all' ? '&filter=' + wellFilter : '';
+        if (idx > 0) {
+            prevBtn.disabled = false;
+            prevBtn.title = filtered[idx - 1];
+            prevBtn.onclick = function() {
+                window.location.href = 'well.html?id=' + encodeURIComponent(filtered[idx - 1]) + filterParam;
+            };
+        }
+        if (idx < filtered.length - 1) {
+            nextBtn.disabled = false;
+            nextBtn.title = filtered[idx + 1];
+            nextBtn.onclick = function() {
+                window.location.href = 'well.html?id=' + encodeURIComponent(filtered[idx + 1]) + filterParam;
+            };
+        }
+    }
+
     async function loadWellNav() {
         try {
             var resp = await fetch('data/wells.json?t=' + Date.now());
             if (!resp.ok) return;
             var data = await resp.json();
-            var wells = (data.wells || []).map(function(w) { return w.NodeID; }).sort();
-            var idx = wells.indexOf(NODE_ID);
-            if (idx < 0) return;
+            allWellsData = data.wells || [];
 
-            var prevBtn = document.getElementById('prevWell');
-            var nextBtn = document.getElementById('nextWell');
+            // Restore filter from URL param
+            var filterParam = params.get('filter');
+            if (filterParam) {
+                wellFilter = filterParam;
+                document.querySelectorAll('#wellFilterBar .filter-btn').forEach(function(btn) {
+                    btn.classList.toggle('active', btn.dataset.filter === wellFilter);
+                });
+            }
 
-            if (idx > 0) {
-                prevBtn.disabled = false;
-                prevBtn.title = wells[idx - 1];
-                prevBtn.onclick = function() {
-                    window.location.href = 'well.html?id=' + encodeURIComponent(wells[idx - 1]);
-                };
-            }
-            if (idx < wells.length - 1) {
-                nextBtn.disabled = false;
-                nextBtn.title = wells[idx + 1];
-                nextBtn.onclick = function() {
-                    window.location.href = 'well.html?id=' + encodeURIComponent(wells[idx + 1]);
-                };
-            }
+            updateWellNav();
         } catch(e) { /* silent */ }
     }
+
+    // Filter button clicks
+    document.querySelectorAll('#wellFilterBar .filter-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('#wellFilterBar .filter-btn').forEach(function(b) { b.classList.remove('active'); });
+            btn.classList.add('active');
+            wellFilter = btn.dataset.filter;
+            updateWellNav();
+        });
+    });
 
     // ── Init ──
     if (NODE_ID) {
