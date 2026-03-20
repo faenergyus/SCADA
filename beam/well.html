@@ -6,6 +6,8 @@
     <title>Well Detail — Forty Acres Rod Status</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <script src="js/wave-equation.js"></script>
+    <script src="js/card-patterns.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -85,6 +87,14 @@
                 </div>
             </div>
             <div class="mt-3 text-sm text-gray-400" id="cardInfo"></div>
+
+            <!-- FAE Card Diagnosis -->
+            <div id="diagnosisPanel" class="mt-4 hidden">
+                <div class="info-card">
+                    <div class="text-fae-gold font-semibold mb-3">FAE Card Diagnosis</div>
+                    <div id="diagnosisContent"></div>
+                </div>
+            </div>
         </div>
 
         <!-- Tab: Analysis -->
@@ -132,6 +142,7 @@
 
     var cards = [];
     var currentCardIdx = 0;
+    var wellDataGlobal = null;  // store for wave equation
 
     // Clock
     function updateClock() {
@@ -158,7 +169,7 @@
     // ── Load well detail data ──
     async function loadWellDetails() {
         try {
-            var resp = await fetch('data/well_details.json');
+            var resp = await fetch('data/well_details.json?t=' + Date.now());
             if (!resp.ok) throw new Error('HTTP ' + resp.status);
             var allDetails = await resp.json();
 
@@ -177,10 +188,14 @@
                 return;
             }
 
+            wellDataGlobal = wellData;
             var master = wellData.master || wellData;
             renderStatus(master);
             renderAnalysis(wellData.xdiag_last || wellData.xdiag || {});
-            renderWellInfo(wellData.well_details || wellData.details || {}, master);
+            renderWellInfo(wellData.well_details || wellData.details || {}, master, wellData.rod_string);
+
+            // Re-render current card with wave equation if cards already loaded
+            if (cards.length > 0) selectCard(currentCardIdx);
         } catch (e) {
             document.getElementById('statusCards').innerHTML =
                 '<div class="info-card col-span-full"><div class="text-red-400">Failed to load well details: ' + e.message + '</div></div>';
@@ -189,7 +204,7 @@
 
     async function loadCards() {
         try {
-            var resp = await fetch('data/cards.json');
+            var resp = await fetch('data/cards.json?t=' + Date.now());
             if (!resp.ok) throw new Error('HTTP ' + resp.status);
             var allCards = await resp.json();
             // cards.json is a dict keyed by NodeID, each value is an array of cards
@@ -216,7 +231,7 @@
 
     async function loadAlarms() {
         try {
-            var resp = await fetch('data/alarms.json');
+            var resp = await fetch('data/alarms.json?t=' + Date.now());
             if (!resp.ok) throw new Error('HTTP ' + resp.status);
             var allAlarms = await resp.json();
             var alarmsList = Array.isArray(allAlarms) ? allAlarms : (allAlarms.alarms || []);
@@ -312,14 +327,41 @@
         var surfData = card.SurfaceCardB || card.SurfaceCard || null;
         plotCard('surfaceCardPlot', surfData, '#c8a951');
 
-        // Downhole card
+        // Downhole card — XSPOC version
         var dhData = card.DownholeCardB || card.POCDownholeCardB || card.DownholeCard || null;
-        plotCard('downholeCardPlot', dhData, '#22c55e');
+
+        // Try FAE wave equation calculation
+        var faeCard = null;
+        var rodModel = null;
+        if (wellDataGlobal && surfData && surfData.position && surfData.load) {
+            var wd = wellDataGlobal.well_details || {};
+            var rs = wellDataGlobal.rod_string || [];
+            if (rs.length > 0 && wd.PumpDepth > 0) {
+                rodModel = WaveEquation.buildRodModel(rs, wd);
+                if (rodModel) {
+                    faeCard = WaveEquation.calculateDownholeCard(
+                        surfData.position, surfData.load, rodModel,
+                        { dampingFactor: 0.20, nHarmonics: 15 }
+                    );
+                }
+            }
+        }
+
+        // Plot downhole with both XSPOC and FAE overlays
+        plotDownholeCard(dhData, faeCard);
+
+        // Run diagnostics on the best available downhole card
+        var diagCard = dhData || faeCard;
+        runDiagnostics(diagCard, rodModel);
 
         // Info below charts
         var infoStr = 'SPM: ' + vf(card.SPM, 1) +
             ' | Stroke: ' + v(card.StrokeLength, '"') +
             ' | Fillage: ' + vf(card.Fillage, 1, '%');
+        if (faeCard && faeCard.meta) {
+            infoStr += ' | FAE Calc: ' + faeCard.meta.nHarmonics + ' harmonics, ζ=' + faeCard.meta.dampingFactor +
+                ', c=' + faeCard.meta.avgWaveSpeedFtS + ' ft/s';
+        }
         document.getElementById('cardInfo').textContent = infoStr;
     }
 
@@ -349,6 +391,137 @@
         };
 
         Plotly.newPlot(el, [trace], layout, { responsive: true, displayModeBar: false });
+    }
+
+    function plotDownholeCard(xspocCard, faeCard) {
+        var el = document.getElementById('downholeCardPlot');
+        var traces = [];
+
+        if (xspocCard && xspocCard.position && xspocCard.position.length > 0) {
+            traces.push({
+                x: xspocCard.position,
+                y: xspocCard.load,
+                mode: 'lines',
+                name: 'XSPOC',
+                line: { color: '#22c55e', width: 2 },
+                fill: 'toself',
+                fillcolor: hexToRgba('#22c55e', 0.08),
+            });
+        }
+
+        if (faeCard && faeCard.position && faeCard.position.length > 0) {
+            traces.push({
+                x: faeCard.position,
+                y: faeCard.load,
+                mode: 'lines',
+                name: 'FAE Calc',
+                line: { color: '#3b82f6', width: 2, dash: 'dot' },
+            });
+        }
+
+        if (traces.length === 0) {
+            el.innerHTML = '<div class="text-gray-500 text-center py-12">No data</div>';
+            return;
+        }
+
+        var layout = {
+            paper_bgcolor: 'transparent',
+            plot_bgcolor: 'transparent',
+            margin: { t: 10, r: 20, b: 40, l: 60 },
+            xaxis: { title: 'Position (in)', color: '#9ca3af', gridcolor: '#374151' },
+            yaxis: { title: 'Load (lbs)', color: '#9ca3af', gridcolor: '#374151' },
+            font: { color: '#9ca3af' },
+            showlegend: traces.length > 1,
+            legend: { x: 0.7, y: 0.95, bgcolor: 'rgba(0,0,0,0.5)', font: { color: '#d1d5db' } },
+        };
+
+        Plotly.newPlot(el, traces, layout, { responsive: true, displayModeBar: false });
+    }
+
+    function runDiagnostics(cardData, rodModel) {
+        var panel = document.getElementById('diagnosisPanel');
+        var content = document.getElementById('diagnosisContent');
+
+        if (!cardData || !cardData.position || cardData.position.length < 10) {
+            panel.classList.add('hidden');
+            return;
+        }
+
+        var result = CardPatterns.analyzeCard(cardData.position, cardData.load, rodModel);
+        if (!result || !result.primary) {
+            panel.classList.add('hidden');
+            return;
+        }
+
+        panel.classList.remove('hidden');
+
+        var severityColors = {
+            normal: 'bg-green-900/50 text-green-300 border-green-700',
+            info: 'bg-blue-900/50 text-blue-300 border-blue-700',
+            caution: 'bg-yellow-900/50 text-yellow-300 border-yellow-700',
+            warning: 'bg-orange-900/50 text-orange-300 border-orange-700',
+            critical: 'bg-red-900/50 text-red-300 border-red-700',
+        };
+
+        var html = '';
+
+        // Primary diagnosis
+        var p = result.primary;
+        var sevClass = severityColors[p.pattern.severity] || severityColors.info;
+        html += '<div class="border rounded-lg p-4 mb-3 ' + sevClass + '">';
+        html += '<div class="flex items-center gap-3 mb-2">';
+        html += '<span class="text-lg font-bold">' + escapeHtml(p.pattern.name) + '</span>';
+        html += '<span class="text-xs px-2 py-0.5 rounded-full bg-black/30">' +
+            Math.round(p.confidence * 100) + '% confidence</span>';
+        html += '<span class="text-xs uppercase px-2 py-0.5 rounded-full bg-black/20">' +
+            p.pattern.severity + '</span>';
+        html += '</div>';
+        html += '<p class="text-sm mb-2">' + escapeHtml(p.pattern.description) + '</p>';
+        html += '<p class="text-sm opacity-80 mb-2"><strong>Operational:</strong> ' +
+            escapeHtml(p.pattern.operationalMeaning) + '</p>';
+        html += '<div class="text-sm"><strong>Recommended Actions:</strong><ul class="list-disc ml-5 mt-1">';
+        for (var i = 0; i < p.pattern.actions.length; i++) {
+            html += '<li>' + escapeHtml(p.pattern.actions[i]) + '</li>';
+        }
+        html += '</ul></div></div>';
+
+        // Secondary diagnosis (if any)
+        if (result.secondary && result.secondary.confidence > 0.3) {
+            var s = result.secondary;
+            var sevClass2 = severityColors[s.pattern.severity] || severityColors.info;
+            html += '<div class="border rounded-lg p-3 mb-3 ' + sevClass2 + ' opacity-70">';
+            html += '<div class="flex items-center gap-3">';
+            html += '<span class="font-semibold">Also possible: ' + escapeHtml(s.pattern.name) + '</span>';
+            html += '<span class="text-xs px-2 py-0.5 rounded-full bg-black/30">' +
+                Math.round(s.confidence * 100) + '%</span>';
+            html += '</div>';
+            html += '<p class="text-sm mt-1">' + escapeHtml(s.pattern.description) + '</p>';
+            html += '</div>';
+        }
+
+        // Feature summary (collapsible)
+        html += '<details class="mt-2">';
+        html += '<summary class="text-sm text-gray-400 cursor-pointer">Shape Features (debug)</summary>';
+        html += '<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 mt-2 text-xs">';
+        var f = result.features;
+        var featureLabels = {
+            areaRatio: 'Area Ratio', loadRange: 'Load Range', upstrokeSlope: 'Upstroke Slope',
+            downstrokeSlope: 'Downstroke Slope', tvTransition: 'TV Transition', svTransition: 'SV Transition',
+            flatTop: 'Flat Top', flatBottom: 'Flat Bottom', fluidPoundIdx: 'Fluid Pound',
+            gasCompression: 'Gas Compression', symmetry: 'Symmetry', bottomSpike: 'Bottom Spike',
+            tubingMovement: 'Tubing Movement', phaseShift: 'Phase Shift',
+        };
+        for (var key in featureLabels) {
+            if (f[key] !== undefined) {
+                html += '<div class="bg-gray-800 rounded px-2 py-1">';
+                html += '<span class="text-gray-500">' + featureLabels[key] + ':</span> ';
+                html += '<span class="text-gray-200">' + (typeof f[key] === 'number' ? f[key].toFixed(3) : f[key]) + '</span>';
+                html += '</div>';
+            }
+        }
+        html += '</div></details>';
+
+        content.innerHTML = html;
     }
 
     function hexToRgba(hex, alpha) {
@@ -412,7 +585,7 @@
     }
 
     // ── Well Info tab ──
-    function renderWellInfo(d, m) {
+    function renderWellInfo(d, m, rodString) {
         var el = document.getElementById('wellInfoContent');
         if (!d) {
             el.innerHTML = '<div class="text-gray-500 col-span-full">No well details available</div>';
@@ -451,6 +624,16 @@
                 ['Min Load', vf(d.MinLoad, 0, ' lbs')],
             ]},
         ];
+
+        // Add individual rod sections if available
+        if (rodString && rodString.length > 0) {
+            var rodItems = rodString.map(function(r) {
+                var desc = '#' + r.RodNum + ': ' + (r.Grade || 'Unknown');
+                var detail = vf(r.Diameter, 3, '"') + ' × ' + vf(r.Length, 0, ' ft');
+                return [desc, detail];
+            });
+            groups.push({ title: 'Rod Sections', items: rodItems });
+        }
         el.innerHTML = groups.map(function(g) {
             return '<div class="info-card">' +
                 '<div class="text-fae-gold font-semibold mb-3">' + g.title + '</div>' +
