@@ -327,8 +327,9 @@
         var surfData = card.SurfaceCardB || card.SurfaceCard || null;
         plotCard('surfaceCardPlot', surfData, '#c8a951');
 
-        // Downhole card — XSPOC version
-        var dhData = card.DownholeCardB || card.POCDownholeCardB || card.DownholeCard || null;
+        // Downhole cards — XDiag and POC versions
+        var dhData = card.DownholeCardB || card.DownholeCard || null;
+        var pocData = card.POCDownholeCardB || null;
 
         // Try FAE wave equation calculation
         var faeCard = null;
@@ -347,8 +348,8 @@
             }
         }
 
-        // Plot downhole with both XSPOC and FAE overlays
-        plotDownholeCard(dhData, faeCard);
+        // Plot downhole with XSPOC, POC, and FAE overlays
+        plotDownholeCard(dhData, pocData, faeCard);
 
         // Run diagnostics on the best available downhole card
         var diagCard = dhData || faeCard;
@@ -393,7 +394,7 @@
         Plotly.newPlot(el, [trace], layout, { responsive: true, displayModeBar: false });
     }
 
-    function plotDownholeCard(xspocCard, faeCard) {
+    function plotDownholeCard(xspocCard, pocCard, faeCard) {
         var el = document.getElementById('downholeCardPlot');
         var traces = [];
 
@@ -402,10 +403,20 @@
                 x: xspocCard.position,
                 y: xspocCard.load,
                 mode: 'lines',
-                name: 'XSPOC',
+                name: 'XDiag',
                 line: { color: '#22c55e', width: 2 },
                 fill: 'toself',
                 fillcolor: hexToRgba('#22c55e', 0.08),
+            });
+        }
+
+        if (pocCard && pocCard.position && pocCard.position.length > 0) {
+            traces.push({
+                x: pocCard.position,
+                y: pocCard.load,
+                mode: 'lines',
+                name: 'POC',
+                line: { color: '#f59e0b', width: 2, dash: 'dash' },
             });
         }
 
@@ -432,7 +443,7 @@
             yaxis: { title: 'Load (lbs)', color: '#9ca3af', gridcolor: '#374151' },
             font: { color: '#9ca3af' },
             showlegend: traces.length > 1,
-            legend: { x: 0.7, y: 0.95, bgcolor: 'rgba(0,0,0,0.5)', font: { color: '#d1d5db' } },
+            legend: { x: 0.02, y: 0.98, bgcolor: 'rgba(0,0,0,0.5)', font: { color: '#d1d5db', size: 10 } },
         };
 
         Plotly.newPlot(el, traces, layout, { responsive: true, displayModeBar: false });
