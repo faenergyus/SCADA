@@ -191,6 +191,24 @@ const CardPatterns = (function () {
             weight: 1.3,
         },
         {
+            id: 'pump_hitting_up',
+            name: 'Pump Hitting Up',
+            severity: 'critical',
+            description: 'Plunger topping out on upstroke — sharp load spike at top of stroke. Card shows spike in upstroke load near top dead center.',
+            operationalMeaning: 'Plunger hitting top of barrel or overtravel on upstroke. Can damage pump barrel, seating nipple, or rod string.',
+            actions: [
+                'Adjust rod space / rod length',
+                'Check for fluid pound (causes overtravel)',
+                'Verify stroke length setting',
+                'Shut down if severe',
+            ],
+            features: {
+                areaRatio: { min: 0.5, max: 0.95 },
+                topSpike: { min: 0.5, ideal: 0.8 },
+            },
+            weight: 1.3,
+        },
+        {
             id: 'bent_barrel',
             name: 'Bent Pump Barrel / Sticking Plunger',
             severity: 'caution',
@@ -450,6 +468,20 @@ const CardPatterns = (function () {
             if (spikeLoad > avgUpLoad * 1.3) bottomSpike = Math.min(1, (spikeLoad - avgUpLoad) * 3);
         }
 
+        // Top spike (pump hitting up)
+        var topSpike = 0;
+        var topRegion = downIndices.slice(0, Math.max(3, Math.floor(downIndices.length * 0.1)));
+        if (topRegion.length > 1) {
+            var topSpikeLoad = 1;
+            for (var k = 0; k < topRegion.length; k++) {
+                if (normLoad[topRegion[k]] < topSpikeLoad) topSpikeLoad = normLoad[topRegion[k]];
+            }
+            var avgDownLoad = 0;
+            for (var k = 0; k < downIndices.length; k++) avgDownLoad += normLoad[downIndices[k]];
+            avgDownLoad /= downIndices.length;
+            if (topSpikeLoad < avgDownLoad * 0.7) topSpike = Math.min(1, (avgDownLoad - topSpikeLoad) * 3);
+        }
+
         // Tubing movement: difference in position at same load levels
         var tubingMovement = 0;
         // Compare position at mid-load during upstroke vs downstroke
@@ -482,6 +514,7 @@ const CardPatterns = (function () {
             gasCompression: gasCompression,
             symmetry: symmetry,
             bottomSpike: bottomSpike,
+            topSpike: topSpike,
             tubingMovement: tubingMovement,
             phaseShift: phaseShift,
             // Raw stats for display
