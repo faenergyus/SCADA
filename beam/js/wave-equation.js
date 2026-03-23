@@ -151,12 +151,12 @@ var WaveEquation = (function () {
         //   c_d = 2·ζ·ω₀  where ω₀ = fundamental angular frequency.
         //   Typical range: 0.05 (light) to 1.0 (heavy).
         //   Higher values smooth the card (attenuate high harmonics).
-        //   XSPOC typically uses 0.1–0.3 depending on well conditions.
+        //   XSPOC typically uses 0.5 for most wells.
         var zeta = opts.dampingFactor != null ? opts.dampingFactor : 0.50;
 
         // Number of Fourier harmonics to use.
         // More harmonics = sharper features but more noise sensitivity.
-        // 20–40 harmonics is typical for rod pump analysis.
+        // 10–15 harmonics is typical for rod pump analysis.
         var maxHarm = opts.nHarmonics || 12;
         var nHarm = Math.min(Math.floor(M / 2), maxHarm);
 
@@ -171,8 +171,14 @@ var WaveEquation = (function () {
         //
         //   X[n] = Σ_{k=0}^{M-1} x[k] · e^{-i·2π·nk/M}
         //
-        // We compute the raw (unnormalized) DFT coefficients.
-        // The 1/M normalization is applied during the inverse transform.
+        // SIGN CONVENTION: The polished rod load (PRL) is an upward
+        // tension force, but the wave equation's internal force convention
+        // is F = EA·du/dx with u positive downward. For a rod in tension
+        // (upper part pulled up), du/dx < 0, so F < 0. Therefore:
+        //   F_wave(0) = -PRL
+        //
+        // We negate the surface load during DFT, then negate the pump
+        // load back after IDFT to return to the PRL convention.
         // ---------------------------------------------------------------
         var surfPosRe = new Float64Array(nHarm + 1);
         var surfPosIm = new Float64Array(nHarm + 1);
@@ -187,8 +193,9 @@ var WaveEquation = (function () {
                 var sa = Math.sin(angle);
                 pr += surfacePosition[k] * ca;
                 pi -= surfacePosition[k] * sa;
-                lr += surfaceLoad[k] * ca;
-                li -= surfaceLoad[k] * sa;
+                // Negate load for wave equation sign convention
+                lr -= surfaceLoad[k] * ca;
+                li += surfaceLoad[k] * sa;
             }
             surfPosRe[n] = pr;
             surfPosIm[n] = pi;
@@ -229,12 +236,11 @@ var WaveEquation = (function () {
             if (n === 0) {
                 // ── DC component (n=0, ω=0) ──
                 // Static case: no wave propagation.
-                // Displacement increases by elastic stretch: Δu = F·L/(EA)
+                // Displacement changes by elastic stretch: Δu = F·L/(EA)
                 // Force stays constant (gravity handled by buoyant weight subtraction)
                 for (var s = 0; s < rodModel.sections.length; s++) {
                     var sec0 = rodModel.sections[s];
                     var compliance = sec0.length / sec0.EA;  // in/lbs
-                    // Complex multiply: (f_re + i·f_im) × compliance
                     u_re += f_re * compliance;
                     u_im += f_im * compliance;
                 }
@@ -248,14 +254,10 @@ var WaveEquation = (function () {
                     var EA_s = sec.EA;           // lbs
                     var L_s = sec.length;        // in
 
-                    // Complex wave number: κ² = (ω_n² + i·c_d·ω_n) / c²
-                    // (positive imaginary for decay in +x with DFT convention)
-                    // κ²_re = ω_n² / c²
-                    // κ²_im = −c_d·ω_n / c²
-                    //
+                    // Complex wave number: κ² = (ω_n² − i·c_d·ω_n) / c²
                     // κ = sqrt(κ²) via polar form
                     var ksq_re = (omega_n * omega_n) / (c_s * c_s);
-                    var ksq_im = (c_d * omega_n) / (c_s * c_s);
+                    var ksq_im = -(c_d * omega_n) / (c_s * c_s);
 
                     var ksq_mag = Math.sqrt(ksq_re * ksq_re + ksq_im * ksq_im);
                     var ksq_arg = Math.atan2(ksq_im, ksq_re);
@@ -362,7 +364,51 @@ var WaveEquation = (function () {
         }
 
         // ---------------------------------------------------------------
-        // Step 4: Post-processing — normalize position, compute net load
+        // Step 4: Phase alignment
+        //
+        // The transfer matrix introduces a phase shift (wave propagation
+        // delay). The downhole card must be re-indexed so its bottom-of-
+        // stroke aligns with the surface card's bottom-of-stroke.
+        //
+        // Find where the surface and pump positions reach their minimum,
+        // then roll the pump arrays to align.
+        // ---------------------------------------------------------------
+        var surfMinIdx = 0, surfMinVal = surfacePosition[0];
+        for (var t = 1; t < M; t++) {
+            if (surfacePosition[t] < surfMinVal) {
+                surfMinVal = surfacePosition[t];
+                surfMinIdx = t;
+            }
+        }
+
+        var pumpMinIdx = 0, pumpMinVal = dhDisp[0];
+        for (var t = 1; t < M; t++) {
+            if (dhDisp[t] < pumpMinVal) {
+                pumpMinVal = dhDisp[t];
+                pumpMinIdx = t;
+            }
+        }
+
+        var phaseShift = ((pumpMinIdx - surfMinIdx) % M + M) % M;
+        if (phaseShift > 0) {
+            // Roll arrays backward by phaseShift to align bottom-of-stroke
+            var tmpDisp = new Float64Array(M);
+            var tmpLoad = new Float64Array(M);
+            for (var t = 0; t < M; t++) {
+                var srcIdx = (t + phaseShift) % M;
+                tmpDisp[t] = dhDisp[srcIdx];
+                tmpLoad[t] = dhLoad[srcIdx];
+            }
+            dhDisp = tmpDisp;
+            dhLoad = tmpLoad;
+        }
+
+        // ---------------------------------------------------------------
+        // Step 5: Post-processing — normalize position, compute net load
+        //
+        // The load was negated on input (F = -PRL). We negate it back
+        // here so positive load = tension = PRL convention.
+        // Then subtract buoyant rod weight for net pump load.
         // ---------------------------------------------------------------
 
         // Normalize displacement (shift so minimum = 0)
@@ -385,12 +431,12 @@ var WaveEquation = (function () {
             }
         }
 
-        // Net pump load = axial rod force at pump − buoyant rod weight
+        // Net pump load = -(negated force) - buoyant rod weight
         var resultPos = new Array(M);
         var resultLoad = new Array(M);
         for (var t = 0; t < M; t++) {
             resultPos[t] = Math.round((dhDisp[t] - minDH) * 100) / 100;
-            resultLoad[t] = Math.round(dhLoad[t] - totalBuoyantWt);
+            resultLoad[t] = Math.round(-dhLoad[t] - totalBuoyantWt);
         }
 
         // Metadata for display

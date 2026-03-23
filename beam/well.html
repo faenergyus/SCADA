@@ -356,8 +356,9 @@
                 rodModel = WaveEquation.buildRodModel(rs, wd);
                 if (rodModel) {
                     // Use per-well damping from XSPOC if available, else default 0.5
+                    // XSPOC Friction can range 0.1–10+ in their units; cap to reasonable range
                     var xdiag = wellDataGlobal.xdiag_last || {};
-                    var dampVal = xdiag.Friction || 0.5;
+                    var dampVal = Math.min(Math.max(xdiag.Friction || 0.5, 0.05), 1.5);
                     // Use XSPOC buoyant rod weight if available
                     var opts = { dampingFactor: dampVal };
                     if (xdiag.BouyRodWeight) opts.buoyantRodWeight = xdiag.BouyRodWeight;
