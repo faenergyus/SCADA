@@ -94,6 +94,21 @@ var WaveEquation = (function () {
         var pumpDepth = (wellDetails.PumpDepth || 0) * 12;  // ft → in
         if (pumpDepth === 0) pumpDepth = totalLength;
 
+        // Detect impedance mismatches for adaptive harmonic selection.
+        // Large mismatches (fiberglass-steel) cause harmonic resonance in the
+        // transfer matrix, requiring fewer harmonics or higher damping.
+        var hasFiberglass = false;
+        var maxImpedanceRatio = 1;
+        for (var i = 0; i < model.length; i++) {
+            if (model[i].wDens < 0.1) hasFiberglass = true;  // fiberglass density
+            if (i > 0) {
+                var Z_prev = model[i-1].wDens * model[i-1].area * model[i-1].waveSpeed;
+                var Z_curr = model[i].wDens * model[i].area * model[i].waveSpeed;
+                var ratio = Z_prev > Z_curr ? Z_curr / Z_prev : Z_prev / Z_curr;
+                if (ratio < maxImpedanceRatio) maxImpedanceRatio = ratio;
+            }
+        }
+
         return {
             sections: model,
             totalLength: totalLength,
@@ -104,6 +119,8 @@ var WaveEquation = (function () {
             fluidSG: wellDetails.FluidSpecificGravity || wellDetails.WaterSG || 1.0,
             tubingPressure: wellDetails.TubingPressure || 0,
             casingPressure: wellDetails.CasingPressure || 0,
+            hasFiberglass: hasFiberglass,
+            minImpedanceRatio: maxImpedanceRatio,
         };
     }
 
@@ -154,10 +171,14 @@ var WaveEquation = (function () {
         //   XSPOC typically uses 0.5 for most wells.
         var zeta = opts.dampingFactor != null ? opts.dampingFactor : 0.50;
 
-        // Number of Fourier harmonics to use.
-        // More harmonics = sharper features but more noise sensitivity.
-        // 10–15 harmonics is typical for rod pump analysis.
-        var maxHarm = opts.nHarmonics || 12;
+        // Number of Fourier harmonics — adaptive based on rod string impedance.
+        // Large impedance mismatches (e.g. fiberglass-steel, ratio < 0.4) cause
+        // higher harmonics to resonate (|T22| > 1 with ~180° phase flip), producing
+        // inverted load traces. Limiting harmonics suppresses this artifact.
+        // Steel-only wells: 12 harmonics (smooth, sharp features)
+        // Fiberglass wells: 6 harmonics (avoids resonance zone)
+        var defaultHarm = (rodModel.hasFiberglass || rodModel.minImpedanceRatio < 0.4) ? 6 : 12;
+        var maxHarm = opts.nHarmonics || defaultHarm;
         var nHarm = Math.min(Math.floor(M / 2), maxHarm);
 
         // Fundamental angular frequency (rad/s)
@@ -366,21 +387,9 @@ var WaveEquation = (function () {
         // ---------------------------------------------------------------
         // Step 4: Phase alignment
         //
-        // The transfer matrix introduces a phase shift (wave propagation
-        // delay). The downhole card must be re-indexed so its bottom-of-
-        // stroke aligns with the surface card's bottom-of-stroke.
-        //
-        // Find where the surface and pump positions reach their minimum,
-        // then roll the pump arrays to align.
+        // Roll the pump card so minimum position is at index 0, matching
+        // XSPOC's DH card convention (bottom-of-stroke first).
         // ---------------------------------------------------------------
-        var surfMinIdx = 0, surfMinVal = surfacePosition[0];
-        for (var t = 1; t < M; t++) {
-            if (surfacePosition[t] < surfMinVal) {
-                surfMinVal = surfacePosition[t];
-                surfMinIdx = t;
-            }
-        }
-
         var pumpMinIdx = 0, pumpMinVal = dhDisp[0];
         for (var t = 1; t < M; t++) {
             if (dhDisp[t] < pumpMinVal) {
@@ -389,13 +398,11 @@ var WaveEquation = (function () {
             }
         }
 
-        var phaseShift = ((pumpMinIdx - surfMinIdx) % M + M) % M;
-        if (phaseShift > 0) {
-            // Roll arrays backward by phaseShift to align bottom-of-stroke
+        if (pumpMinIdx > 0) {
             var tmpDisp = new Float64Array(M);
             var tmpLoad = new Float64Array(M);
             for (var t = 0; t < M; t++) {
-                var srcIdx = (t + phaseShift) % M;
+                var srcIdx = (t + pumpMinIdx) % M;
                 tmpDisp[t] = dhDisp[srcIdx];
                 tmpLoad[t] = dhLoad[srcIdx];
             }
@@ -459,6 +466,8 @@ var WaveEquation = (function () {
                 rodSections: rodModel.sections.length,
                 avgWaveSpeedFtS: Math.round(avgC / 12),
                 buoyantRodWt: Math.round(totalBuoyantWt),
+                hasFiberglass: rodModel.hasFiberglass,
+                impedanceRatio: Math.round(rodModel.minImpedanceRatio * 1000) / 1000,
             }
         };
     }
