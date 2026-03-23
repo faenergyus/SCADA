@@ -558,9 +558,33 @@ const CardPatterns = (function () {
     // Pattern Matching
     // -----------------------------------------------------------------------
 
+    // -----------------------------------------------------------------------
+    // Empirical Centroids — computed from 47 wells (2026-03-23)
+    //
+    // Each centroid is [areaRatio, flatTop, flatBottom, fluidPoundIdx,
+    //                   svTransition, tvTransition]
+    // with corresponding standard deviations. Used by the nearest-centroid
+    // classifier to score each pattern.
+    // -----------------------------------------------------------------------
+    var CENTROIDS = {
+        full_pump:          { mean: [0.823, 0.763, 0.694, 0.168, -0.503, 0.943], std: [0.06, 0.06, 0.08, 0.05, 0.40, 0.15], n: 8 },
+        fluid_pound:        { mean: [0.577, 0.645, 0.382, 0.297, 0.270, 0.709], std: [0.23, 0.30, 0.22, 0.22, 0.35, 0.42], n: 16 },
+        gas_interference:   { mean: [0.592, 0.483, 0.347, 0.217, 0.394, 0.502], std: [0.08, 0.24, 0.12, 0.13, 0.37, 0.40], n: 3 },
+        incomplete_fillage: { mean: [0.686, 0.421, 0.527, 0.210, 0.749, 0.838], std: [0.10, 0.25, 0.17, 0.08, 0.50, 0.33], n: 5 },
+        bent_barrel:        { mean: [0.771, 0.815, 0.346, 0.250, 0.831, 0.860], std: [0.08, 0.13, 0.25, 0.08, 0.24, 0.20], n: 3 },
+        sv_leak:            { mean: [0.771, 0.527, 0.587, 0.156, 0.542, 0.567], std: [0.08, 0.12, 0.08, 0.12, 0.46, 0.43], n: 3 },
+        tv_leak:            { mean: [0.749, 0.333, 1.000, 0.051, 0.630, 0.414], std: [0.15, 0.15, 0.08, 0.08, 0.20, 0.30], n: 2 },
+        worn_pump:          { mean: [0.804, 0.626, 0.709, 0.113, 1.000, 1.000], std: [0.10, 0.15, 0.10, 0.08, 0.20, 0.15], n: 1 },
+        rod_part:           { mean: [0.311, 0.103, 0.095, 0.060, -0.814, -0.820], std: [0.15, 0.10, 0.10, 0.08, 0.30, 0.30], n: 1 },
+    };
+
     /**
-     * Match extracted features against all patterns.
-     * Returns ranked list of diagnoses with confidence scores.
+     * Nearest-centroid classifier with sample-count weighting.
+     *
+     * Computes normalized Euclidean distance from the extracted feature
+     * vector to each condition's empirical centroid (divided by per-feature
+     * standard deviation). Conditions with more training samples get a
+     * log-scale bonus to avoid overfitting to single-sample outliers.
      *
      * @param {Object} features - From extractFeatures()
      * @returns {Array} [{pattern, confidence, matchDetails}, ...] sorted by confidence desc
@@ -568,74 +592,80 @@ const CardPatterns = (function () {
     function diagnose(features) {
         if (!features || features.error) return [];
 
+        var fVec = [
+            features.areaRatio,
+            features.flatTop,
+            features.flatBottom,
+            features.fluidPoundIdx,
+            features.svTransition,
+            features.tvTransition,
+        ];
+
+        // Check for valid features
+        for (var i = 0; i < fVec.length; i++) {
+            if (fVec[i] === undefined || fVec[i] === null || isNaN(fVec[i])) return [];
+        }
+
         var results = [];
+        var maxScore = -Infinity;
 
-        for (var p = 0; p < PATTERNS.length; p++) {
-            var pattern = PATTERNS[p];
-            var score = 0;
-            var maxScore = 0;
+        for (var cid in CENTROIDS) {
+            if (!CENTROIDS.hasOwnProperty(cid)) continue;
+            var cent = CENTROIDS[cid];
+
+            // Normalized Euclidean distance
+            var dist = 0;
             var details = {};
-
-            var featureSpecs = pattern.features;
-            for (var fName in featureSpecs) {
-                if (!featureSpecs.hasOwnProperty(fName)) continue;
-
-                var spec = featureSpecs[fName];
-                var actual = features[fName];
-                if (actual === undefined || actual === null) continue;
-
-                maxScore += 1;
-                var featureScore = 0;
-
-                // Check if within range
-                var inRange = true;
-                if (spec.min !== undefined && actual < spec.min) inRange = false;
-                if (spec.max !== undefined && actual > spec.max) inRange = false;
-
-                if (inRange) {
-                    featureScore = 0.5;  // base score for being in range
-
-                    // Bonus for being near ideal
-                    if (spec.ideal !== undefined) {
-                        var dist = Math.abs(actual - spec.ideal);
-                        var range = 1.0;
-                        if (spec.min !== undefined && spec.max !== undefined) {
-                            range = spec.max - spec.min;
-                        } else if (spec.min !== undefined) {
-                            range = Math.max(1, spec.ideal - spec.min) * 2;
-                        } else if (spec.max !== undefined) {
-                            range = Math.max(1, spec.max - spec.ideal) * 2;
-                        }
-                        featureScore += 0.5 * Math.max(0, 1 - dist / Math.max(range, 0.01));
-                    } else {
-                        featureScore = 0.8;  // just in range, no ideal specified
-                    }
-                }
-
-                score += featureScore;
-                details[fName] = {
-                    actual: Math.round(actual * 1000) / 1000,
-                    spec: spec,
-                    match: featureScore > 0.3,
-                    score: Math.round(featureScore * 100) / 100,
+            for (var i = 0; i < 6; i++) {
+                var std = Math.max(cent.std[i], 0.05);
+                var d = (fVec[i] - cent.mean[i]) / std;
+                dist += d * d;
+                var fNames = ['areaRatio', 'flatTop', 'flatBottom', 'fluidPoundIdx', 'svTransition', 'tvTransition'];
+                details[fNames[i]] = {
+                    actual: Math.round(fVec[i] * 1000) / 1000,
+                    centroid: Math.round(cent.mean[i] * 1000) / 1000,
+                    zScore: Math.round(d * 100) / 100,
                 };
             }
+            dist = Math.sqrt(dist);
 
-            var confidence = maxScore > 0 ? (score / maxScore) * pattern.weight : 0;
-            confidence = Math.min(1, confidence);
+            // Sample-count bonus (log scale)
+            var sampleBonus = Math.log(Math.max(cent.n, 1) + 1) * 0.5;
+            var score = -dist + sampleBonus;
+            if (score > maxScore) maxScore = score;
 
-            if (confidence > 0.2) {
-                results.push({
-                    pattern: pattern,
-                    confidence: Math.round(confidence * 100) / 100,
-                    matchDetails: details,
-                });
+            // Find matching pattern object
+            var pattern = null;
+            for (var p = 0; p < PATTERNS.length; p++) {
+                if (PATTERNS[p].id === cid) { pattern = PATTERNS[p]; break; }
+            }
+            if (!pattern) continue;
+
+            results.push({
+                pattern: pattern,
+                confidence: 0,  // filled below
+                distance: Math.round(dist * 100) / 100,
+                matchDetails: details,
+                _score: score,
+            });
+        }
+
+        // Convert scores to confidence (0-1 range, best = 1)
+        if (results.length > 0) {
+            // Softmax-like: confidence = exp(-dist) normalized
+            var sumExp = 0;
+            for (var i = 0; i < results.length; i++) {
+                results[i]._exp = Math.exp(results[i]._score);
+                sumExp += results[i]._exp;
+            }
+            for (var i = 0; i < results.length; i++) {
+                results[i].confidence = Math.round((results[i]._exp / sumExp) * 100) / 100;
+                delete results[i]._exp;
+                delete results[i]._score;
             }
         }
 
-        // Sort by confidence descending
         results.sort(function (a, b) { return b.confidence - a.confidence; });
-
         return results;
     }
 
