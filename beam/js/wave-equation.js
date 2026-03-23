@@ -532,21 +532,41 @@ var WaveEquation = (function () {
         var N_nodes = opts.nNodes || 50;
         var dx = totalLen / N_nodes;
 
-        // Find max wave speed across all sections
-        var maxWaveSpeed = 0;
+        // Find min wave speed across all sections (CFL constraint)
+        var minWaveSpeed = Infinity;
         for (var s = 0; s < rodModel.sections.length; s++) {
-            if (rodModel.sections[s].waveSpeed > maxWaveSpeed)
-                maxWaveSpeed = rodModel.sections[s].waveSpeed;
+            if (rodModel.sections[s].waveSpeed < minWaveSpeed)
+                minWaveSpeed = rodModel.sections[s].waveSpeed;
         }
 
-        // Time step from CFL: dt <= dx / maxWaveSpeed
-        var dt = 0.90 * dx / maxWaveSpeed;
+        // CFL for spatial marching: dt >= dx / c_min
+        // (opposite of time-marching CFL — the spatial Courant number
+        //  r_s = dx/(c·dt) must be <= 1 for stability)
+        var dt = dx / (0.95 * minWaveSpeed);
         var M_fine = Math.ceil(T / dt);
         dt = T / M_fine;  // adjust to fit cycle exactly
 
-        // Interpolate surface card to fine time grid
-        var surfPosFine = interpArray(surfacePosition, M_fine);
-        var surfLoadFine = interpArray(surfaceLoad, M_fine);
+        // Effective loads: subtract DC (mean) to avoid cancellation error.
+        // The spatial marching scheme differences large displacements to get
+        // small forces. Working with effective (AC) values keeps magnitudes small.
+        var posMean = 0, loadMean = 0;
+        for (var k = 0; k < M_orig; k++) {
+            posMean += surfacePosition[k];
+            loadMean += surfaceLoad[k];
+        }
+        posMean /= M_orig;
+        loadMean /= M_orig;
+
+        var surfPosEff = new Array(M_orig);
+        var surfLoadEff = new Array(M_orig);
+        for (var k = 0; k < M_orig; k++) {
+            surfPosEff[k] = surfacePosition[k] - posMean;
+            surfLoadEff[k] = surfaceLoad[k] - loadMean;
+        }
+
+        // Interpolate effective surface card to fine time grid
+        var surfPosFine = interpArray(surfPosEff, M_fine);
+        var surfLoadFine = interpArray(surfLoadEff, M_fine);
 
         // Map each spatial node to a rod section (by cumulative length)
         function getPropsAtDepth(depth) {
@@ -609,12 +629,17 @@ var WaveEquation = (function () {
         }
 
         // After loop: U_im1 = U[N], U_im2 = U[N-1]
-        // Pump force from strain at pump depth
+        // Effective pump force from strain at pump depth
         var secPump = getPropsAtDepth(totalLen);
         var dhLoadFine = new Float64Array(M_fine);
         for (var t = 0; t < M_fine; t++) {
             dhLoadFine[t] = (secPump.EA / dx) * (U_im1[t] - U_im2[t]);
         }
+
+        // Add back DC offset: net pump load = F_eff + (mean_PRL - W_buoyant)
+        // The effective force oscillates around zero; the DC component is the
+        // static pump force (mean surface load minus buoyant rod weight).
+        var dcOffset = loadMean;  // buoyant weight subtracted below
 
         // Sample back to original time grid
         var sampleRatio = M_fine / M_orig;
@@ -622,8 +647,8 @@ var WaveEquation = (function () {
         var dhLoad = new Float64Array(M_orig);
         for (var t = 0; t < M_orig; t++) {
             var tf = Math.round(t * sampleRatio) % M_fine;
-            dhDisp[t] = U_im1[tf];
-            dhLoad[t] = dhLoadFine[tf];
+            dhDisp[t] = U_im1[tf] + posMean;  // add back position DC
+            dhLoad[t] = dhLoadFine[tf] + dcOffset;  // add back load DC
         }
 
         // Phase alignment: roll so min position is at index 0
