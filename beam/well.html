@@ -355,9 +355,14 @@
             if (rs.length > 0 && wd.PumpDepth > 0) {
                 rodModel = WaveEquation.buildRodModel(rs, wd);
                 if (rodModel) {
+                    // Use per-well damping from XSPOC if available, else default 0.5
+                    var xdiag = wellDataGlobal.xdiag_last || {};
+                    var dampVal = xdiag.Friction || 0.5;
+                    // Use XSPOC buoyant rod weight if available
+                    var opts = { dampingFactor: dampVal };
+                    if (xdiag.BouyRodWeight) opts.buoyantRodWeight = xdiag.BouyRodWeight;
                     faeCard = WaveEquation.calculateDownholeCard(
-                        surfData.position, surfData.load, rodModel,
-                        { dampingFactor: 0.4 }
+                        surfData.position, surfData.load, rodModel, opts
                     );
                 }
             }

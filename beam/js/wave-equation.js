@@ -1,25 +1,61 @@
 /**
  * Gibbs Wave Equation — Downhole Card Calculator
  *
- * Transfer matrix (Fourier) solution of the 1D damped wave equation.
- * Decomposes surface card into Fourier harmonics, propagates each through
- * the rod string using per-section transfer matrices, then reconstructs
- * the downhole card via inverse DFT.
+ * Transfer matrix (Fourier) solution of the 1D damped wave equation
+ * for sucker rod pump systems.
  *
- * Properly handles tapered rod strings — each section has its own
- * 2×2 transfer matrix accounting for impedance (E·A) and wave speed.
+ * Method:
+ *   1. Decompose surface card (position + load) into Fourier harmonics
+ *   2. For each harmonic, propagate through the tapered rod string using
+ *      per-section 2×2 transfer matrices with COMPLEX wave numbers (damping)
+ *   3. Reconstruct the downhole card via inverse DFT
+ *   4. Subtract buoyant rod weight to get net pump load
  *
- * Reference: Gibbs, S.G. SPE-588-PA (1963); Everitt & Jennings (1992)
+ * The complex wave number κ incorporates viscous damping directly into
+ * the transfer matrix, so energy is properly attenuated through each
+ * rod section. This correctly models impedance changes at taper transitions.
+ *
+ * Wave equation:  ∂²u/∂t² + c_d·∂u/∂t = c²·∂²u/∂x²
+ * For harmonic n: κ_n² = (ω_n² − i·c_d·ω_n) / c²
+ *
+ * Transfer matrix for section j of length L, wave speed c, impedance EA:
+ *   | cos(κL)           sin(κL)/(EA·κ) |
+ *   | −EA·κ·sin(κL)     cos(κL)        |
+ *
+ * References:
+ *   - Gibbs, S.G. "Predicting the Behavior of Sucker-Rod Pumping Systems"
+ *     JPT, July 1963 (SPE-588-PA)
+ *   - Everitt, T.A. & Jennings, J.W. "An Improved Finite-Difference
+ *     Calculation of Downhole Dynamometer Cards" SPE 18189, 1992
+ *   - Schafer, D.J. & Jennings, J.W. "An Investigation of Analytical
+ *     and Numerical Sucker Rod Pumping Models" SPE 16919, 1987
  */
 
 var WaveEquation = (function () {
     'use strict';
 
-    var STEEL_WEIGHT_DENSITY = 0.2833;  // lbf/in³ (weight density)
-    var STEEL_ELASTICITY = 30.5e6;      // psi
-    var GRAVITY = 386.4;                // in/s²
+    // ===================================================================
+    // Physical constants
+    // ===================================================================
+    var STEEL_WEIGHT_DENSITY = 0.2833;  // lbf/in³ (weight density, NOT mass)
+    var STEEL_ELASTICITY = 30.5e6;      // psi (Young's modulus for steel rods)
+    var GRAVITY = 386.4;                // in/s² (gravitational acceleration)
     var PI = Math.PI;
 
+    // ===================================================================
+    // Rod model builder
+    // ===================================================================
+
+    /**
+     * Build a rod model from XSPOC rod_string and well_details data.
+     *
+     * Rod sections are ordered from surface (RodNum=1) to pump.
+     * Each section stores: length (in), diameter (in), area (in²),
+     * EA (lbs), wave speed (in/s), weight density (lbf/in³).
+     *
+     * Wave speed = sqrt(E·g / ρ_weight) where ρ_weight is in lbf/in³.
+     * For steel: c ≈ sqrt(30.5e6 × 386.4 / 0.2833) ≈ 203,900 in/s ≈ 16,990 ft/s
+     */
     function buildRodModel(rodSections, wellDetails) {
         if (!rodSections || rodSections.length === 0) return null;
 
@@ -32,27 +68,30 @@ var WaveEquation = (function () {
 
         for (var i = 0; i < sections.length; i++) {
             var s = sections[i];
-            var lenIn = (s.Length || 0) * 12;
-            var diam = s.Diameter || 0.75;
-            var E = s.Elasticity || STEEL_ELASTICITY;
+            var lenIn = (s.Length || 0) * 12;       // ft → in
+            var diam = s.Diameter || 0.75;           // in
+            var E = s.Elasticity || STEEL_ELASTICITY; // psi
             var matlID = s.RodMatlID || 1;
-            var wDens = (matlID === 4) ? 0.065 : STEEL_WEIGHT_DENSITY;
-            var area = PI * diam * diam / 4;
+            // Material densities: steel=0.2833, sinker bar=0.374, fiberglass=0.065 lbf/in³
+            // Sinker bar density back-computed from XSPOC DryRodWeight values
+            var wDens = (matlID === 4) ? 0.065 :
+                        (matlID === 2) ? 0.374 : STEEL_WEIGHT_DENSITY;
+            var area = PI * diam * diam / 4;         // in²
 
             model.push({
                 length: lenIn,
                 diameter: diam,
                 area: area,
                 E: E,
-                EA: E * area,
+                EA: E * area,                         // lbs (axial stiffness)
                 wDens: wDens,
-                waveSpeed: Math.sqrt(E * GRAVITY / wDens),
-                weightPerIn: wDens * area,
+                waveSpeed: Math.sqrt(E * GRAVITY / wDens),  // in/s
+                weightPerIn: wDens * area,            // lbf/in (linear weight)
             });
             totalLength += lenIn;
         }
 
-        var pumpDepth = (wellDetails.PumpDepth || 0) * 12;
+        var pumpDepth = (wellDetails.PumpDepth || 0) * 12;  // ft → in
         if (pumpDepth === 0) pumpDepth = totalLength;
 
         return {
@@ -68,17 +107,38 @@ var WaveEquation = (function () {
         };
     }
 
+    // ===================================================================
+    // Complex arithmetic helpers (inline [re, im] pairs)
+    // ===================================================================
+    //
+    // These operate on 2-element arrays [real, imaginary].
+    // For performance in the inner loop, we also use inline scalar math.
+
     /**
-     * Calculate downhole card from surface card using transfer matrix method.
+     * Complex cosine: cos(a + bi) = cos(a)·cosh(b) − i·sin(a)·sinh(b)
+     */
+    function ccos_re(a, b) { return Math.cos(a) * Math.cosh(b); }
+    function ccos_im(a, b) { return -Math.sin(a) * Math.sinh(b); }
+
+    /**
+     * Complex sine: sin(a + bi) = sin(a)·cosh(b) + i·cos(a)·sinh(b)
+     */
+    function csin_re(a, b) { return Math.sin(a) * Math.cosh(b); }
+    function csin_im(a, b) { return Math.cos(a) * Math.sinh(b); }
+
+    // ===================================================================
+    // Main calculator
+    // ===================================================================
+
+    /**
+     * Calculate downhole card from surface card using the Gibbs transfer
+     * matrix method with complex (damped) wave numbers.
      *
-     * For each Fourier harmonic n of the surface card:
-     *   1. Compute complex wave number κ_n for each rod section (includes damping)
-     *   2. Build 2×2 transfer matrix T_j(κ_n) for each section j
-     *   3. Multiply: [u_pump, F_pump]^T = T_last · ... · T_1 · [u_surf, F_surf]^T
-     *
-     * Transfer matrix for section j:
-     *   | cos(κL)           sin(κL)/(EA·κ) |
-     *   | -EA·κ·sin(κL)     cos(κL)        |
+     * @param {Array} surfacePosition - Surface card position array (inches)
+     * @param {Array} surfaceLoad     - Surface card load array (lbs)
+     * @param {Object} rodModel       - From buildRodModel()
+     * @param {Object} options        - { dampingFactor, nHarmonics }
+     * @returns {Object} { position, load, meta } or null
      */
     function calculateDownholeCard(surfacePosition, surfaceLoad, rodModel, options) {
         if (!rodModel || !surfacePosition || !surfaceLoad) return null;
@@ -86,14 +146,33 @@ var WaveEquation = (function () {
         if (M < 10) return null;
 
         var opts = options || {};
-        var dampCoeff = opts.dampingFactor != null ? opts.dampingFactor : 0.4;
-        var nHarm = Math.floor(M / 2);
 
-        var omega = 2 * PI * rodModel.spm / 60;  // fundamental angular frequency (rad/s)
+        // Damping coefficient ζ — controls viscous energy dissipation.
+        //   c_d = 2·ζ·ω₀  where ω₀ = fundamental angular frequency.
+        //   Typical range: 0.05 (light) to 1.0 (heavy).
+        //   Higher values smooth the card (attenuate high harmonics).
+        //   XSPOC typically uses 0.1–0.3 depending on well conditions.
+        var zeta = opts.dampingFactor != null ? opts.dampingFactor : 0.50;
+
+        // Number of Fourier harmonics to use.
+        // More harmonics = sharper features but more noise sensitivity.
+        // 20–40 harmonics is typical for rod pump analysis.
+        var maxHarm = opts.nHarmonics || 12;
+        var nHarm = Math.min(Math.floor(M / 2), maxHarm);
+
+        // Fundamental angular frequency (rad/s)
+        var omega0 = 2 * PI * rodModel.spm / 60;
+
+        // Viscous damping coefficient: c_d = 2·ζ·ω₀
+        var c_d = 2 * zeta * omega0;
 
         // ---------------------------------------------------------------
         // Step 1: DFT of surface position and load
+        //
         //   X[n] = Σ_{k=0}^{M-1} x[k] · e^{-i·2π·nk/M}
+        //
+        // We compute the raw (unnormalized) DFT coefficients.
+        // The 1/M normalization is applied during the inverse transform.
         // ---------------------------------------------------------------
         var surfPosRe = new Float64Array(nHarm + 1);
         var surfPosIm = new Float64Array(nHarm + 1);
@@ -118,7 +197,24 @@ var WaveEquation = (function () {
         }
 
         // ---------------------------------------------------------------
-        // Step 2: Propagate each harmonic through rod string
+        // Step 2: Propagate each harmonic through the rod string
+        //
+        // For each Fourier harmonic n (frequency ω_n = n·ω₀):
+        //   - Compute complex wave number κ_n for each rod section
+        //   - Apply 2×2 transfer matrix through each section
+        //
+        // The state vector is [u, F] (displacement, force), both complex.
+        //
+        // Wave number:
+        //   κ² = (ω_n² − i·c_d·ω_n) / c²
+        //   κ  = ω_n/c · √(1 − i·c_d/ω_n)
+        //
+        // Transfer matrix for section with length L, stiffness EA:
+        //   T11 = cos(κL)             T12 = sin(κL)/(EA·κ)
+        //   T21 = −EA·κ·sin(κL)       T22 = cos(κL)
+        //
+        //   [u_out]   [T11  T12] [u_in]
+        //   [F_out] = [T21  T22] [F_in]
         // ---------------------------------------------------------------
         var pumpPosRe = new Float64Array(nHarm + 1);
         var pumpPosIm = new Float64Array(nHarm + 1);
@@ -126,59 +222,102 @@ var WaveEquation = (function () {
         var pumpLoadIm = new Float64Array(nHarm + 1);
 
         for (var n = 0; n <= nHarm; n++) {
+            // Current state: [u, F] as complex numbers
             var u_re = surfPosRe[n], u_im = surfPosIm[n];
             var f_re = surfLoadRe[n], f_im = surfLoadIm[n];
 
             if (n === 0) {
-                // DC (static): u grows by elastic stretch F·L/(EA) per section;
-                // force constant (gravity handled by buoyant weight subtraction)
+                // ── DC component (n=0, ω=0) ──
+                // Static case: no wave propagation.
+                // Displacement increases by elastic stretch: Δu = F·L/(EA)
+                // Force stays constant (gravity handled by buoyant weight subtraction)
                 for (var s = 0; s < rodModel.sections.length; s++) {
-                    var sec = rodModel.sections[s];
-                    var stretchFactor = sec.length / sec.EA;
-                    u_re += f_re * stretchFactor;
-                    u_im += f_im * stretchFactor;
+                    var sec0 = rodModel.sections[s];
+                    var compliance = sec0.length / sec0.EA;  // in/lbs
+                    // Complex multiply: (f_re + i·f_im) × compliance
+                    u_re += f_re * compliance;
+                    u_im += f_im * compliance;
                 }
             } else {
-                var omega_n = n * omega;
+                // ── Harmonic n > 0 ──
+                var omega_n = n * omega0;  // angular frequency for this harmonic
 
-                // Undamped transfer matrices (real wave numbers)
                 for (var s = 0; s < rodModel.sections.length; s++) {
                     var sec = rodModel.sections[s];
-                    var c_s = sec.waveSpeed;
-                    var EA_s = sec.EA;
-                    var L_s = sec.length;
+                    var c_s = sec.waveSpeed;    // in/s
+                    var EA_s = sec.EA;           // lbs
+                    var L_s = sec.length;        // in
 
-                    // Real wave number: κ = ω_n / c
-                    var kappa = omega_n / c_s;
-                    var phi = kappa * L_s;
+                    // Complex wave number: κ² = (ω_n² + i·c_d·ω_n) / c²
+                    // (positive imaginary for decay in +x with DFT convention)
+                    // κ²_re = ω_n² / c²
+                    // κ²_im = −c_d·ω_n / c²
+                    //
+                    // κ = sqrt(κ²) via polar form
+                    var ksq_re = (omega_n * omega_n) / (c_s * c_s);
+                    var ksq_im = (c_d * omega_n) / (c_s * c_s);
 
-                    var cosPhi = Math.cos(phi);
-                    var sinPhi = Math.sin(phi);
-                    var EAk = EA_s * kappa;
+                    var ksq_mag = Math.sqrt(ksq_re * ksq_re + ksq_im * ksq_im);
+                    var ksq_arg = Math.atan2(ksq_im, ksq_re);
+                    var k_mag = Math.sqrt(ksq_mag);
+                    var k_arg = ksq_arg / 2;
 
-                    // Transfer matrix (real):
-                    // u_new = cos(φ)·u + sin(φ)/(EA·κ)·f
-                    // f_new = −EA·κ·sin(φ)·u + cos(φ)·f
-                    var u_new_re = cosPhi * u_re + (sinPhi / EAk) * f_re;
-                    var u_new_im = cosPhi * u_im + (sinPhi / EAk) * f_im;
-                    var f_new_re = -EAk * sinPhi * u_re + cosPhi * f_re;
-                    var f_new_im = -EAk * sinPhi * u_im + cosPhi * f_im;
+                    var k_re = k_mag * Math.cos(k_arg);  // wave number (real part)
+                    var k_im = k_mag * Math.sin(k_arg);  // wave number (imag part, < 0 for decay)
 
-                    u_re = u_new_re;
-                    u_im = u_new_im;
-                    f_re = f_new_re;
-                    f_im = f_new_im;
+                    // Phase angle: φ = κ · L  (complex)
+                    var phi_re = k_re * L_s;
+                    var phi_im = k_im * L_s;
+
+                    // Complex trig functions:
+                    //   cos(a+bi) = cos(a)·cosh(b) − i·sin(a)·sinh(b)
+                    //   sin(a+bi) = sin(a)·cosh(b) + i·cos(a)·sinh(b)
+                    var cos_re = ccos_re(phi_re, phi_im);
+                    var cos_im = ccos_im(phi_re, phi_im);
+                    var sin_re = csin_re(phi_re, phi_im);
+                    var sin_im = csin_im(phi_re, phi_im);
+
+                    // EA·κ (complex): [EA·k_re, EA·k_im]
+                    var eak_re = EA_s * k_re;
+                    var eak_im = EA_s * k_im;
+
+                    // T12 = sin(φ) / (EA·κ)  — complex division
+                    var eak_mag2 = eak_re * eak_re + eak_im * eak_im;
+                    var t12_re = (sin_re * eak_re + sin_im * eak_im) / eak_mag2;
+                    var t12_im = (sin_im * eak_re - sin_re * eak_im) / eak_mag2;
+
+                    // T21 = −EA·κ · sin(φ)  — complex multiply, negated
+                    var t21_re = -(eak_re * sin_re - eak_im * sin_im);
+                    var t21_im = -(eak_re * sin_im + eak_im * sin_re);
+
+                    // Apply transfer matrix:
+                    //   u_new = T11·u + T12·f  where T11 = cos(φ), T22 = cos(φ)
+                    //   f_new = T21·u + T22·f
+                    //
+                    // Complex multiply T11·u = cos(φ)·u:
+                    var cu_re = cos_re * u_re - cos_im * u_im;
+                    var cu_im = cos_re * u_im + cos_im * u_re;
+
+                    // Complex multiply T12·f:
+                    var tf_re = t12_re * f_re - t12_im * f_im;
+                    var tf_im = t12_re * f_im + t12_im * f_re;
+
+                    // Complex multiply T21·u:
+                    var tu_re = t21_re * u_re - t21_im * u_im;
+                    var tu_im = t21_re * u_im + t21_im * u_re;
+
+                    // Complex multiply T22·f = cos(φ)·f:
+                    var cf_re = cos_re * f_re - cos_im * f_im;
+                    var cf_im = cos_re * f_im + cos_im * f_re;
+
+                    // Sum: u_new = cos(φ)·u + sin(φ)/(EA·κ)·f
+                    u_re = cu_re + tf_re;
+                    u_im = cu_im + tf_im;
+
+                    // Sum: f_new = −EA·κ·sin(φ)·u + cos(φ)·f
+                    f_re = tu_re + cf_re;
+                    f_im = tu_im + cf_im;
                 }
-
-                // Post-transfer damping: attenuate each harmonic exponentially
-                // Higher harmonics traverse more wave-lengths → more damping
-                // Factor = exp(−ζ · n·ω·L_total / c_avg)
-                var dampFactor = Math.exp(-dampCoeff * omega_n *
-                    rodModel.totalLength / rodModel.sections[0].waveSpeed);
-                u_re *= dampFactor;
-                u_im *= dampFactor;
-                f_re *= dampFactor;
-                f_im *= dampFactor;
             }
 
             pumpPosRe[n] = u_re;
@@ -189,8 +328,11 @@ var WaveEquation = (function () {
 
         // ---------------------------------------------------------------
         // Step 3: Inverse DFT to reconstruct pump card
+        //
         //   x[k] = (1/M) · Σ_{n=0}^{M-1} X[n] · e^{i·2π·nk/M}
-        //   Using conjugate symmetry: X[M−n] = X[n]* for real signals
+        //
+        // Using conjugate symmetry for real signals: X[M−n] = X[n]*
+        // Only n=0..nHarm computed; contributions doubled for 0<n<nHarm.
         // ---------------------------------------------------------------
         var dhDisp = new Float64Array(M);
         var dhLoad = new Float64Array(M);
@@ -201,10 +343,12 @@ var WaveEquation = (function () {
                 var angle = 2 * PI * n * k / M;
                 var ca = Math.cos(angle);
                 var sa = Math.sin(angle);
-                // Real part of X[n]·e^{iθ} = Xr·cos(θ) − Xi·sin(θ)
+
+                // Real part of X[n]·e^{iθ} = Re·cos(θ) − Im·sin(θ)
                 var cd = pumpPosRe[n] * ca - pumpPosIm[n] * sa;
                 var cl = pumpLoadRe[n] * ca - pumpLoadIm[n] * sa;
-                // DC and Nyquist contribute once; all others doubled (conjugate pair)
+
+                // DC and Nyquist contribute once; all others doubled
                 if (n === 0 || (n === nHarm && M % 2 === 0)) {
                     d += cd;
                     l += cl;
@@ -218,23 +362,30 @@ var WaveEquation = (function () {
         }
 
         // ---------------------------------------------------------------
-        // Step 4: Normalize displacement and compute net pump load
+        // Step 4: Post-processing — normalize position, compute net load
         // ---------------------------------------------------------------
+
+        // Normalize displacement (shift so minimum = 0)
         var minDH = dhDisp[0];
         for (var t = 1; t < M; t++) {
             if (dhDisp[t] < minDH) minDH = dhDisp[t];
         }
 
-        // Buoyant rod weight: total rod weight minus buoyancy
-        var fluidDens = rodModel.fluidSG * 62.4 / 1728;  // lbf/in³
-        var buoyFactor = 1 - fluidDens / STEEL_WEIGHT_DENSITY;
-        var totalBuoyantWt = 0;
-        for (var s = 0; s < rodModel.sections.length; s++) {
-            totalBuoyantWt += rodModel.sections[s].weightPerIn *
-                              rodModel.sections[s].length * buoyFactor;
+        // Buoyant rod weight: use XSPOC value if provided, else compute
+        var totalBuoyantWt;
+        if (opts.buoyantRodWeight) {
+            totalBuoyantWt = opts.buoyantRodWeight;
+        } else {
+            var fluidDens = rodModel.fluidSG * 62.4 / 1728;  // lbf/in³
+            totalBuoyantWt = 0;
+            for (var s = 0; s < rodModel.sections.length; s++) {
+                var sec_s = rodModel.sections[s];
+                var buoyFactor_s = 1 - fluidDens / sec_s.wDens;
+                totalBuoyantWt += sec_s.weightPerIn * sec_s.length * buoyFactor_s;
+            }
         }
 
-        // Net pump load = rod force at pump − buoyant rod weight
+        // Net pump load = axial rod force at pump − buoyant rod weight
         var resultPos = new Array(M);
         var resultLoad = new Array(M);
         for (var t = 0; t < M; t++) {
@@ -242,9 +393,8 @@ var WaveEquation = (function () {
             resultLoad[t] = Math.round(dhLoad[t] - totalBuoyantWt);
         }
 
-        // Average wave speed for metadata
-        var avgC = 0;
-        var totalLen = 0;
+        // Metadata for display
+        var avgC = 0, totalLen = 0;
         for (var s = 0; s < rodModel.sections.length; s++) {
             avgC += rodModel.sections[s].waveSpeed * rodModel.sections[s].length;
             totalLen += rodModel.sections[s].length;
@@ -257,7 +407,8 @@ var WaveEquation = (function () {
             meta: {
                 method: 'Gibbs (transfer matrix)',
                 nHarmonics: nHarm,
-                dampingFactor: dampCoeff,
+                dampingFactor: zeta,
+                dampingCoeff: Math.round(c_d * 1000) / 1000,
                 pumpDepthFt: Math.round(rodModel.pumpDepth / 12),
                 rodSections: rodModel.sections.length,
                 avgWaveSpeedFtS: Math.round(avgC / 12),
@@ -266,6 +417,19 @@ var WaveEquation = (function () {
         };
     }
 
+    // ===================================================================
+    // Ideal (theoretical) downhole card
+    // ===================================================================
+
+    /**
+     * Generate an ideal downhole card for a fully-loaded pump.
+     * Used as a reference shape for pattern matching.
+     *
+     * Ideal card is rectangular with:
+     *   - Upstroke load = fluid_load + tubing_pressure_load − casing_pressure_load
+     *   - Downstroke load = max(0, tubing_pressure_load − casing_pressure_load)
+     *   - Sharp transitions at top and bottom of stroke
+     */
     function idealDownholeCard(rodModel, netStroke) {
         if (!rodModel) return null;
         var plungerArea = PI * rodModel.plungerDiam * rodModel.plungerDiam / 4;
@@ -278,14 +442,30 @@ var WaveEquation = (function () {
         var N = 100, pos = [], load = [];
         for (var i = 0; i < N; i++) {
             var f = i / (N - 1);
-            if (f < 0.02) { pos.push(0); load.push(downLoad + (upLoad - downLoad) * f / 0.02); }
-            else if (f < 0.5) { pos.push(stroke * (f - 0.02) / 0.48); load.push(upLoad); }
-            else if (f < 0.52) { pos.push(stroke); load.push(upLoad - (upLoad - downLoad) * (f - 0.5) / 0.02); }
-            else { pos.push(stroke * (1 - (f - 0.52) / 0.48)); load.push(downLoad); }
+            if (f < 0.02) {
+                pos.push(0);
+                load.push(downLoad + (upLoad - downLoad) * f / 0.02);
+            } else if (f < 0.5) {
+                pos.push(stroke * (f - 0.02) / 0.48);
+                load.push(upLoad);
+            } else if (f < 0.52) {
+                pos.push(stroke);
+                load.push(upLoad - (upLoad - downLoad) * (f - 0.5) / 0.02);
+            } else {
+                pos.push(stroke * (1 - (f - 0.52) / 0.48));
+                load.push(downLoad);
+            }
         }
-        return { position: pos, load: load, meta: { fluidLoad: Math.round(upLoad), downstrokeLoad: Math.round(downLoad) }};
+        return {
+            position: pos,
+            load: load,
+            meta: { fluidLoad: Math.round(upLoad), downstrokeLoad: Math.round(downLoad) }
+        };
     }
 
+    // ===================================================================
+    // Public API
+    // ===================================================================
     return {
         buildRodModel: buildRodModel,
         calculateDownholeCard: calculateDownholeCard,
