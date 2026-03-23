@@ -500,6 +500,70 @@ const CardPatterns = (function () {
         }
         if (maxLoadPos > 0.6 || maxLoadPos < 0.1) phaseShift = 0.5;
 
+        // C-to-D transition sharpness (sharp = fluid pound, gradual = gas interference)
+        // Measures max load-drop slope in first 20% of downstroke
+        var cdSharpness = 0;
+        if (downIndices.length > 5) {
+            var cdSeg = downIndices.slice(0, Math.max(5, Math.floor(downIndices.length / 5)));
+            var cdMaxSlope = 0;
+            for (var k = 1; k < cdSeg.length; k++) {
+                var cdDP = Math.abs(normPos[cdSeg[k]] - normPos[cdSeg[k - 1]]);
+                var cdDL = normLoad[cdSeg[k - 1]] - normLoad[cdSeg[k]];
+                if (cdDP > 0.001) {
+                    var cdS = cdDL / cdDP;
+                    if (cdS > cdMaxSlope) cdMaxSlope = cdS;
+                }
+            }
+            cdSharpness = Math.min(1, cdMaxSlope / 5.0);
+        }
+
+        // A-to-B transition sharpness (sharp = normal/full pump, gradual = gas/TV leak)
+        var abSharpness = 0;
+        if (upIndices.length > 5) {
+            var abSeg = upIndices.slice(0, Math.max(5, Math.floor(upIndices.length / 5)));
+            var abMaxSlope = 0;
+            for (var k = 1; k < abSeg.length; k++) {
+                var abDP = Math.abs(normPos[abSeg[k]] - normPos[abSeg[k - 1]]);
+                var abDL = normLoad[abSeg[k]] - normLoad[abSeg[k - 1]];
+                if (abDP > 0.001) {
+                    var abS = abDL / abDP;
+                    if (abS > abMaxSlope) abMaxSlope = abS;
+                }
+            }
+            abSharpness = Math.min(1, abMaxSlope / 5.0);
+        }
+
+        // Downstroke load elevation (mean mid-downstroke load, normalized)
+        // High = SV leak (downstroke load elevated above zero line)
+        var dnLoadElev = 0;
+        if (downIndices.length > 4) {
+            var midDnStart = Math.floor(downIndices.length / 4);
+            var midDnEnd = Math.floor(3 * downIndices.length / 4);
+            var dnSum = 0, dnCount = 0;
+            for (var k = midDnStart; k < midDnEnd; k++) {
+                dnSum += normLoad[downIndices[k]];
+                dnCount++;
+            }
+            if (dnCount > 0) dnLoadElev = dnSum / dnCount;
+        }
+
+        // Upstroke load drop point (fraction of upstroke before load drops below 80% of max)
+        // Late = full pump, early = fluid pound / incomplete fillage
+        var upDropPt = 1.0;
+        if (upIndices.length > 5) {
+            var upMaxLoad = 0;
+            for (var k = 0; k < upIndices.length; k++) {
+                if (normLoad[upIndices[k]] > upMaxLoad) upMaxLoad = normLoad[upIndices[k]];
+            }
+            var dropThresh = upMaxLoad * 0.80;
+            for (var k = Math.floor(upIndices.length / 4); k < upIndices.length; k++) {
+                if (normLoad[upIndices[k]] < dropThresh) {
+                    upDropPt = k / upIndices.length;
+                    break;
+                }
+            }
+        }
+
         return {
             areaRatio: areaRatio,
             loadRange: loadRangeRatio,
@@ -516,6 +580,10 @@ const CardPatterns = (function () {
             topSpike: topSpike,
             tubingMovement: tubingMovement,
             phaseShift: phaseShift,
+            cdSharpness: cdSharpness,
+            abSharpness: abSharpness,
+            dnLoadElev: dnLoadElev,
+            upDropPt: upDropPt,
             // Raw stats for display
             _minLoad: minLoad,
             _maxLoad: maxLoad,
@@ -562,20 +630,26 @@ const CardPatterns = (function () {
     // Empirical Centroids — computed from 47 wells (2026-03-23)
     //
     // Each centroid is [areaRatio, flatTop, flatBottom, fluidPoundIdx,
-    //                   svTransition, tvTransition]
+    //   svTransition, tvTransition, cdSharpness, abSharpness, dnLoadElev, upDropPt]
     // with corresponding standard deviations. Used by the nearest-centroid
     // classifier to score each pattern.
+    //
+    // New features from published diagnostic criteria:
+    //   cdSharpness: C-to-D transition slope (sharp=fluid pound, gradual=gas)
+    //   abSharpness: A-to-B transition slope (sharp=normal, gradual=TV leak/gas)
+    //   dnLoadElev:  mean mid-downstroke load (high=SV leak)
+    //   upDropPt:    fraction of upstroke before load drops (late=full pump)
     // -----------------------------------------------------------------------
     var CENTROIDS = {
-        full_pump:          { mean: [0.823, 0.763, 0.694, 0.168, -0.503, 0.943], std: [0.06, 0.06, 0.08, 0.05, 0.40, 0.15], n: 8 },
-        fluid_pound:        { mean: [0.577, 0.645, 0.382, 0.297, 0.270, 0.709], std: [0.23, 0.30, 0.22, 0.22, 0.35, 0.42], n: 16 },
-        gas_interference:   { mean: [0.592, 0.483, 0.347, 0.217, 0.394, 0.502], std: [0.08, 0.24, 0.12, 0.13, 0.37, 0.40], n: 3 },
-        incomplete_fillage: { mean: [0.686, 0.421, 0.527, 0.210, 0.749, 0.838], std: [0.10, 0.25, 0.17, 0.08, 0.50, 0.33], n: 5 },
-        bent_barrel:        { mean: [0.771, 0.815, 0.346, 0.250, 0.831, 0.860], std: [0.08, 0.13, 0.25, 0.08, 0.24, 0.20], n: 3 },
-        sv_leak:            { mean: [0.771, 0.527, 0.587, 0.156, 0.542, 0.567], std: [0.08, 0.12, 0.08, 0.12, 0.46, 0.43], n: 3 },
-        tv_leak:            { mean: [0.749, 0.333, 1.000, 0.051, 0.630, 0.414], std: [0.15, 0.15, 0.08, 0.08, 0.20, 0.30], n: 2 },
-        worn_pump:          { mean: [0.804, 0.626, 0.709, 0.113, 1.000, 1.000], std: [0.10, 0.15, 0.10, 0.08, 0.20, 0.15], n: 1 },
-        rod_part:           { mean: [0.311, 0.103, 0.095, 0.060, -0.814, -0.820], std: [0.15, 0.10, 0.10, 0.08, 0.30, 0.30], n: 1 },
+        full_pump:          { mean: [0.837, 0.785, 0.703, 0.164, 1.000, 1.000, 0.800, 1.000, 0.065, 0.964], std: [0.06, 0.06, 0.08, 0.05, 0.20, 0.10, 0.15, 0.08, 0.05, 0.05], n: 5 },
+        fluid_pound:        { mean: [0.600, 0.660, 0.418, 0.303, 0.268, 0.689, 0.671, 0.808, 0.218, 0.716], std: [0.23, 0.30, 0.22, 0.22, 0.35, 0.42, 0.25, 0.20, 0.12, 0.25], n: 18 },
+        gas_interference:   { mean: [0.600, 0.481, 0.348, 0.218, 0.423, 0.511, 0.801, 0.940, 0.257, 0.524], std: [0.08, 0.24, 0.12, 0.13, 0.37, 0.40, 0.15, 0.08, 0.10, 0.20], n: 3 },
+        incomplete_fillage: { mean: [0.681, 0.422, 0.515, 0.228, -0.102, 0.830, 0.521, 1.000, 0.138, 0.269], std: [0.10, 0.25, 0.17, 0.08, 0.50, 0.33, 0.20, 0.08, 0.08, 0.15], n: 5 },
+        bent_barrel:        { mean: [0.744, 0.781, 0.411, 0.254, 0.879, 1.000, 1.000, 1.000, 0.141, 0.946], std: [0.08, 0.13, 0.25, 0.08, 0.15, 0.10, 0.08, 0.08, 0.08, 0.08], n: 2 },
+        sv_leak:            { mean: [0.758, 0.704, 0.410, 0.189, 1.000, 0.505, 1.000, 0.995, 0.120, 0.766], std: [0.08, 0.12, 0.15, 0.12, 0.20, 0.43, 0.08, 0.08, 0.08, 0.15], n: 4 },
+        tv_leak:            { mean: [0.516, 0.227, 0.429, 0.129, 0.312, 0.457, 0.681, 0.546, 0.205, 0.440], std: [0.15, 0.15, 0.20, 0.08, 0.20, 0.30, 0.20, 0.25, 0.10, 0.20], n: 2 },
+        worn_pump:          { mean: [0.837, 0.697, 0.759, 0.115, 1.000, 1.000, 1.000, 1.000, 0.043, 0.961], std: [0.10, 0.15, 0.10, 0.08, 0.15, 0.10, 0.08, 0.08, 0.05, 0.05], n: 2 },
+        rod_part:           { mean: [0.311, 0.103, 0.095, 0.060, -0.814, -0.820, 0.356, 0.401, 0.781, 0.247], std: [0.15, 0.10, 0.10, 0.08, 0.30, 0.30, 0.20, 0.20, 0.15, 0.15], n: 1 },
     };
 
     /**
@@ -592,20 +666,17 @@ const CardPatterns = (function () {
     function diagnose(features) {
         if (!features || features.error) return [];
 
-        var fVec = [
-            features.areaRatio,
-            features.flatTop,
-            features.flatBottom,
-            features.fluidPoundIdx,
-            features.svTransition,
-            features.tvTransition,
-        ];
-
-        // Check for valid features
-        for (var i = 0; i < fVec.length; i++) {
-            if (fVec[i] === undefined || fVec[i] === null || isNaN(fVec[i])) return [];
+        var fNames = ['areaRatio', 'flatTop', 'flatBottom', 'fluidPoundIdx',
+                      'svTransition', 'tvTransition', 'cdSharpness', 'abSharpness',
+                      'dnLoadElev', 'upDropPt'];
+        var fVec = [];
+        for (var fi = 0; fi < fNames.length; fi++) {
+            var val = features[fNames[fi]];
+            if (val === undefined || val === null || isNaN(val)) return [];
+            fVec.push(val);
         }
 
+        var nFeatures = fVec.length;
         var results = [];
         var maxScore = -Infinity;
 
@@ -616,11 +687,10 @@ const CardPatterns = (function () {
             // Normalized Euclidean distance
             var dist = 0;
             var details = {};
-            for (var i = 0; i < 6; i++) {
+            for (var i = 0; i < nFeatures; i++) {
                 var std = Math.max(cent.std[i], 0.05);
                 var d = (fVec[i] - cent.mean[i]) / std;
                 dist += d * d;
-                var fNames = ['areaRatio', 'flatTop', 'flatBottom', 'fluidPoundIdx', 'svTransition', 'tvTransition'];
                 details[fNames[i]] = {
                     actual: Math.round(fVec[i] * 1000) / 1000,
                     centroid: Math.round(cent.mean[i] * 1000) / 1000,
