@@ -473,6 +473,235 @@ var WaveEquation = (function () {
     }
 
     // ===================================================================
+    // Everitt-Jennings Finite Difference Method (SPE 18189)
+    //
+    // Spatial marching scheme: uses known surface position + load to
+    // march displacement downward through the rod string node by node.
+    // Handles tapered rods, fiberglass, and impedance mismatches naturally.
+    //
+    // For each spatial node i (from surface to pump):
+    //   U[i,t] = A1·U[i-1,t+1] + A2·U[i-1,t] + A3·U[i-1,t-1] - U[i-2,t]
+    //
+    // Advantages over transfer matrix:
+    //   - No harmonic truncation or Gibbs phenomenon
+    //   - Phase coupling between position and load is preserved
+    //   - Naturally handles large impedance mismatches
+    // ===================================================================
+
+    /**
+     * Linearly interpolate array from M_orig points to M_new points (periodic).
+     */
+    function interpArray(arr, M_new) {
+        var M_orig = arr.length;
+        if (M_new === M_orig) return arr.slice();
+        var result = new Float64Array(M_new);
+        for (var k = 0; k < M_new; k++) {
+            var t = k * M_orig / M_new;
+            var i0 = Math.floor(t);
+            var frac = t - i0;
+            var i1 = (i0 + 1) % M_orig;
+            result[k] = arr[i0] * (1 - frac) + arr[i1] * frac;
+        }
+        return result;
+    }
+
+    /**
+     * Calculate downhole card using the Everitt-Jennings finite difference
+     * spatial marching scheme.
+     *
+     * @param {Array} surfacePosition - Surface card position array (inches)
+     * @param {Array} surfaceLoad     - Surface card load array (lbs)
+     * @param {Object} rodModel       - From buildRodModel()
+     * @param {Object} options        - { dampingFactor, nNodes, buoyantRodWeight }
+     * @returns {Object} { position, load, meta } or null
+     */
+    function calculateDownholeCardFD(surfacePosition, surfaceLoad, rodModel, options) {
+        if (!rodModel || !surfacePosition || !surfaceLoad) return null;
+        var M_orig = surfacePosition.length;
+        if (M_orig < 10) return null;
+
+        var opts = options || {};
+        var zeta = opts.dampingFactor != null ? opts.dampingFactor : 0.50;
+        var omega0 = 2 * PI * rodModel.spm / 60;
+        var C_damp = 2 * zeta * omega0;  // viscous damping coefficient (1/s)
+
+        var T = 60 / rodModel.spm;  // stroke period (s)
+        var totalLen = rodModel.totalLength;
+
+        // Spatial grid: ~50 nodes gives good resolution
+        var N_nodes = opts.nNodes || 50;
+        var dx = totalLen / N_nodes;
+
+        // Find max wave speed across all sections
+        var maxWaveSpeed = 0;
+        for (var s = 0; s < rodModel.sections.length; s++) {
+            if (rodModel.sections[s].waveSpeed > maxWaveSpeed)
+                maxWaveSpeed = rodModel.sections[s].waveSpeed;
+        }
+
+        // Time step from CFL: dt <= dx / maxWaveSpeed
+        var dt = 0.90 * dx / maxWaveSpeed;
+        var M_fine = Math.ceil(T / dt);
+        dt = T / M_fine;  // adjust to fit cycle exactly
+
+        // Interpolate surface card to fine time grid
+        var surfPosFine = interpArray(surfacePosition, M_fine);
+        var surfLoadFine = interpArray(surfaceLoad, M_fine);
+
+        // Map each spatial node to a rod section (by cumulative length)
+        function getPropsAtDepth(depth) {
+            var cumLen = 0;
+            for (var s = 0; s < rodModel.sections.length; s++) {
+                var sec = rodModel.sections[s];
+                if (depth <= cumLen + sec.length || s === rodModel.sections.length - 1) {
+                    return sec;
+                }
+                cumLen += sec.length;
+            }
+            return rodModel.sections[rodModel.sections.length - 1];
+        }
+
+        // Allocate working arrays (only need 3 spatial levels)
+        var U_im2 = new Float64Array(M_fine);  // U[i-2, :]
+        var U_im1 = new Float64Array(M_fine);  // U[i-1, :]
+        var U_i   = new Float64Array(M_fine);  // U[i, :] (current)
+
+        // Node 0: surface position
+        for (var t = 0; t < M_fine; t++) {
+            U_im2[t] = surfPosFine[t];
+        }
+
+        // Node 1: Hooke's law — U[1] = U[0] + F_surface * dx / EA
+        var sec0 = getPropsAtDepth(0);
+        for (var t = 0; t < M_fine; t++) {
+            U_im1[t] = U_im2[t] + surfLoadFine[t] * dx / sec0.EA;
+        }
+
+        // Spatial march from node 2 to node N
+        for (var i = 2; i <= N_nodes; i++) {
+            var depth = (i - 0.5) * dx;  // midpoint between i-1 and i
+            var sec = getPropsAtDepth(depth);
+
+            // FD coefficients (Everitt-Jennings)
+            //   alpha = (dx / dt²) * mass_per_length
+            //   mass_per_length = wDens * area / gravity
+            var mpl = sec.wDens * sec.area / GRAVITY;  // lbf·s²/in²
+            var alpha = (dx / (dt * dt)) * mpl;
+            var EA_dx = sec.EA / dx;
+
+            var A1 = alpha * (1 + C_damp * dt) / EA_dx;
+            var A2 = -(alpha * (2 + C_damp * dt) - 2 * EA_dx) / EA_dx;
+            var A3 = alpha / EA_dx;
+            // A4 = -1 (coefficient for U[i-2, t])
+
+            for (var t = 0; t < M_fine; t++) {
+                var t_next = (t + 1) % M_fine;
+                var t_prev = (t - 1 + M_fine) % M_fine;
+
+                U_i[t] = A1 * U_im1[t_next] + A2 * U_im1[t] + A3 * U_im1[t_prev] - U_im2[t];
+            }
+
+            // Shift arrays: im2 ← im1, im1 ← i
+            var tmp = U_im2;
+            U_im2 = U_im1;
+            U_im1 = U_i;
+            U_i = tmp;  // reuse buffer
+        }
+
+        // After loop: U_im1 = U[N], U_im2 = U[N-1]
+        // Pump force from strain at pump depth
+        var secPump = getPropsAtDepth(totalLen);
+        var dhLoadFine = new Float64Array(M_fine);
+        for (var t = 0; t < M_fine; t++) {
+            dhLoadFine[t] = (secPump.EA / dx) * (U_im1[t] - U_im2[t]);
+        }
+
+        // Sample back to original time grid
+        var sampleRatio = M_fine / M_orig;
+        var dhDisp = new Float64Array(M_orig);
+        var dhLoad = new Float64Array(M_orig);
+        for (var t = 0; t < M_orig; t++) {
+            var tf = Math.round(t * sampleRatio) % M_fine;
+            dhDisp[t] = U_im1[tf];
+            dhLoad[t] = dhLoadFine[tf];
+        }
+
+        // Phase alignment: roll so min position is at index 0
+        var pumpMinIdx = 0, pumpMinVal = dhDisp[0];
+        for (var t = 1; t < M_orig; t++) {
+            if (dhDisp[t] < pumpMinVal) {
+                pumpMinVal = dhDisp[t];
+                pumpMinIdx = t;
+            }
+        }
+        if (pumpMinIdx > 0) {
+            var tmpD = new Float64Array(M_orig);
+            var tmpL = new Float64Array(M_orig);
+            for (var t = 0; t < M_orig; t++) {
+                var src = (t + pumpMinIdx) % M_orig;
+                tmpD[t] = dhDisp[src];
+                tmpL[t] = dhLoad[src];
+            }
+            dhDisp = tmpD;
+            dhLoad = tmpL;
+        }
+
+        // Normalize position
+        var minDH = dhDisp[0];
+        for (var t = 1; t < M_orig; t++) {
+            if (dhDisp[t] < minDH) minDH = dhDisp[t];
+        }
+
+        // Buoyant rod weight
+        var totalBuoyantWt;
+        if (opts.buoyantRodWeight) {
+            totalBuoyantWt = opts.buoyantRodWeight;
+        } else {
+            var fluidDens = rodModel.fluidSG * 62.4 / 1728;
+            totalBuoyantWt = 0;
+            for (var s = 0; s < rodModel.sections.length; s++) {
+                var sec_s = rodModel.sections[s];
+                var buoyFactor_s = 1 - fluidDens / sec_s.wDens;
+                totalBuoyantWt += sec_s.weightPerIn * sec_s.length * buoyFactor_s;
+            }
+        }
+
+        // Net pump load = rod force at pump − buoyant rod weight
+        var resultPos = new Array(M_orig);
+        var resultLoad = new Array(M_orig);
+        for (var t = 0; t < M_orig; t++) {
+            resultPos[t] = Math.round((dhDisp[t] - minDH) * 100) / 100;
+            resultLoad[t] = Math.round(dhLoad[t] - totalBuoyantWt);
+        }
+
+        // Metadata
+        var avgC = 0, tLen = 0;
+        for (var s = 0; s < rodModel.sections.length; s++) {
+            avgC += rodModel.sections[s].waveSpeed * rodModel.sections[s].length;
+            tLen += rodModel.sections[s].length;
+        }
+        avgC /= tLen;
+
+        return {
+            position: resultPos,
+            load: resultLoad,
+            meta: {
+                method: 'Everitt-Jennings FD',
+                spatialNodes: N_nodes,
+                timeSteps: M_fine,
+                dampingFactor: zeta,
+                dampingCoeff: Math.round(C_damp * 1000) / 1000,
+                pumpDepthFt: Math.round(rodModel.pumpDepth / 12),
+                rodSections: rodModel.sections.length,
+                avgWaveSpeedFtS: Math.round(avgC / 12),
+                buoyantRodWt: Math.round(totalBuoyantWt),
+                hasFiberglass: rodModel.hasFiberglass,
+                impedanceRatio: Math.round(rodModel.minImpedanceRatio * 1000) / 1000,
+            }
+        };
+    }
+
+    // ===================================================================
     // Ideal (theoretical) downhole card
     // ===================================================================
 
@@ -523,7 +752,8 @@ var WaveEquation = (function () {
     // ===================================================================
     return {
         buildRodModel: buildRodModel,
-        calculateDownholeCard: calculateDownholeCard,
+        calculateDownholeCard: calculateDownholeCard,  // transfer matrix (primary)
+        calculateDownholeCardFD: calculateDownholeCardFD,  // FD (experimental)
         idealDownholeCard: idealDownholeCard,
     };
 })();
