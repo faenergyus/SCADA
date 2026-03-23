@@ -500,37 +500,40 @@ const CardPatterns = (function () {
         }
         if (maxLoadPos > 0.6 || maxLoadPos < 0.1) phaseShift = 0.5;
 
-        // C-to-D transition sharpness (sharp = fluid pound, gradual = gas interference)
-        // Measures max load-drop slope in first 20% of downstroke
+        // C-to-D transition sharpness (sharp = full pump/fluid pound, gradual = gas interference)
+        // Uses AVERAGE slope over the first 30% of downstroke (not max, which saturates).
+        // Published criterion: gas interference has gradual/rounded C-D (avg < 3),
+        // fluid pound has sharp C-D (avg > 3), full pump has very sharp (avg > 8).
         var cdSharpness = 0;
         if (downIndices.length > 5) {
-            var cdSeg = downIndices.slice(0, Math.max(5, Math.floor(downIndices.length / 5)));
-            var cdMaxSlope = 0;
+            var cdSeg = downIndices.slice(0, Math.max(5, Math.floor(downIndices.length * 3 / 10)));
+            var cdSum = 0, cdCount = 0;
             for (var k = 1; k < cdSeg.length; k++) {
                 var cdDP = Math.abs(normPos[cdSeg[k]] - normPos[cdSeg[k - 1]]);
                 var cdDL = normLoad[cdSeg[k - 1]] - normLoad[cdSeg[k]];
                 if (cdDP > 0.001) {
-                    var cdS = cdDL / cdDP;
-                    if (cdS > cdMaxSlope) cdMaxSlope = cdS;
+                    cdSum += cdDL / cdDP;
+                    cdCount++;
                 }
             }
-            cdSharpness = Math.min(1, cdMaxSlope / 5.0);
+            if (cdCount > 0) cdSharpness = Math.min(1, (cdSum / cdCount) / 15.0);
         }
 
         // A-to-B transition sharpness (sharp = normal/full pump, gradual = gas/TV leak)
+        // Same avg slope approach, normalized to 0-1 range (÷15).
         var abSharpness = 0;
         if (upIndices.length > 5) {
-            var abSeg = upIndices.slice(0, Math.max(5, Math.floor(upIndices.length / 5)));
-            var abMaxSlope = 0;
+            var abSeg = upIndices.slice(0, Math.max(5, Math.floor(upIndices.length * 3 / 10)));
+            var abSum = 0, abCount = 0;
             for (var k = 1; k < abSeg.length; k++) {
                 var abDP = Math.abs(normPos[abSeg[k]] - normPos[abSeg[k - 1]]);
                 var abDL = normLoad[abSeg[k]] - normLoad[abSeg[k - 1]];
                 if (abDP > 0.001) {
-                    var abS = abDL / abDP;
-                    if (abS > abMaxSlope) abMaxSlope = abS;
+                    abSum += abDL / abDP;
+                    abCount++;
                 }
             }
-            abSharpness = Math.min(1, abMaxSlope / 5.0);
+            if (abCount > 0) abSharpness = Math.min(1, (abSum / abCount) / 15.0);
         }
 
         // Downstroke load elevation (mean mid-downstroke load, normalized)
@@ -641,15 +644,15 @@ const CardPatterns = (function () {
     //   upDropPt:    fraction of upstroke before load drops (late=full pump)
     // -----------------------------------------------------------------------
     var CENTROIDS = {
-        full_pump:          { mean: [0.837, 0.785, 0.703, 0.164, 1.000, 1.000, 0.800, 1.000, 0.065, 0.964], std: [0.06, 0.06, 0.08, 0.05, 0.20, 0.10, 0.15, 0.08, 0.05, 0.05], n: 5 },
-        fluid_pound:        { mean: [0.600, 0.660, 0.418, 0.303, 0.268, 0.689, 0.671, 0.808, 0.218, 0.716], std: [0.23, 0.30, 0.22, 0.22, 0.35, 0.42, 0.25, 0.20, 0.12, 0.25], n: 18 },
-        gas_interference:   { mean: [0.600, 0.481, 0.348, 0.218, 0.423, 0.511, 0.801, 0.940, 0.257, 0.524], std: [0.08, 0.24, 0.12, 0.13, 0.37, 0.40, 0.15, 0.08, 0.10, 0.20], n: 3 },
-        incomplete_fillage: { mean: [0.681, 0.422, 0.515, 0.228, -0.102, 0.830, 0.521, 1.000, 0.138, 0.269], std: [0.10, 0.25, 0.17, 0.08, 0.50, 0.33, 0.20, 0.08, 0.08, 0.15], n: 5 },
-        bent_barrel:        { mean: [0.744, 0.781, 0.411, 0.254, 0.879, 1.000, 1.000, 1.000, 0.141, 0.946], std: [0.08, 0.13, 0.25, 0.08, 0.15, 0.10, 0.08, 0.08, 0.08, 0.08], n: 2 },
-        sv_leak:            { mean: [0.758, 0.704, 0.410, 0.189, 1.000, 0.505, 1.000, 0.995, 0.120, 0.766], std: [0.08, 0.12, 0.15, 0.12, 0.20, 0.43, 0.08, 0.08, 0.08, 0.15], n: 4 },
-        tv_leak:            { mean: [0.516, 0.227, 0.429, 0.129, 0.312, 0.457, 0.681, 0.546, 0.205, 0.440], std: [0.15, 0.15, 0.20, 0.08, 0.20, 0.30, 0.20, 0.25, 0.10, 0.20], n: 2 },
-        worn_pump:          { mean: [0.837, 0.697, 0.759, 0.115, 1.000, 1.000, 1.000, 1.000, 0.043, 0.961], std: [0.10, 0.15, 0.10, 0.08, 0.15, 0.10, 0.08, 0.08, 0.05, 0.05], n: 2 },
-        rod_part:           { mean: [0.311, 0.103, 0.095, 0.060, -0.814, -0.820, 0.356, 0.401, 0.781, 0.247], std: [0.15, 0.10, 0.10, 0.08, 0.30, 0.30, 0.20, 0.20, 0.15, 0.15], n: 1 },
+        full_pump:          { mean: [0.834, 0.739, 0.710, 0.160, 1.000, 1.000, 0.644, 0.836, 0.059, 0.952], std: [0.05, 0.08, 0.07, 0.05, 0.05, 0.05, 0.15, 0.17, 0.05, 0.05], n: 4 },
+        fluid_pound:        { mean: [0.577, 0.647, 0.400, 0.297, 0.237, 0.675, 0.187, 0.360, 0.241, 0.655], std: [0.22, 0.25, 0.20, 0.22, 0.41, 0.39, 0.26, 0.37, 0.14, 0.34], n: 17 },
+        gas_interference:   { mean: [0.634, 0.562, 0.344, 0.242, 0.584, 0.616, 0.283, 0.390, 0.229, 0.641], std: [0.08, 0.25, 0.09, 0.12, 0.42, 0.41, 0.27, 0.34, 0.05, 0.36], n: 4 },
+        incomplete_fillage: { mean: [0.690, 0.450, 0.526, 0.205, -0.024, 0.885, 0.512, 0.753, 0.154, 0.268], std: [0.10, 0.20, 0.16, 0.09, 1.12, 0.28, 0.35, 0.16, 0.06, 0.05], n: 7 },
+        bent_barrel:        { mean: [0.744, 0.781, 0.411, 0.254, 0.879, 1.000, 0.373, 0.495, 0.141, 0.946], std: [0.05, 0.10, 0.24, 0.05, 0.12, 0.05, 0.30, 0.35, 0.05, 0.05], n: 2 },
+        sv_leak:            { mean: [0.755, 0.651, 0.394, 0.209, 1.000, 0.340, 0.580, 0.176, 0.100, 0.662], std: [0.05, 0.12, 0.14, 0.06, 0.05, 0.48, 0.21, 0.16, 0.05, 0.21], n: 3 },
+        tv_leak:            { mean: [0.823, 0.695, 0.920, 0.134, 0.554, 1.000, 0.361, 0.484, 0.061, 0.909], std: [0.05, 0.06, 0.05, 0.05, 0.45, 0.05, 0.23, 0.08, 0.05, 0.05], n: 2 },
+        worn_pump:          { mean: [0.824, 0.703, 0.728, 0.145, 1.000, 1.000, 0.878, 0.932, 0.056, 0.960], std: [0.05, 0.08, 0.05, 0.05, 0.05, 0.05, 0.12, 0.07, 0.05, 0.05], n: 2 },
+        rod_part:           { mean: [0.311, 0.103, 0.095, 0.060, -0.814, -0.820, -0.070, -0.050, 0.781, 0.247], std: [0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15], n: 1 },
     };
 
     /**
