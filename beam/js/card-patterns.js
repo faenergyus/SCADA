@@ -656,86 +656,227 @@ const CardPatterns = (function () {
     };
 
     /**
-     * Nearest-centroid classifier with sample-count weighting.
+     * Physics-first hybrid classifier.
      *
-     * Computes normalized Euclidean distance from the extracted feature
-     * vector to each condition's empirical centroid (divided by per-feature
-     * standard deviation). Conditions with more training samples get a
-     * log-scale bonus to avoid overfitting to single-sample outliers.
+     * Step 1: Apply hard physical rules from published SPE/industry criteria
+     *         (Downhole Diagnostic, Echometer TechNotes, SPE 17313/173964).
+     *         These override centroid scores when the physics is unambiguous.
+     *
+     * Step 2: Use nearest-centroid as tiebreaker for ambiguous cases.
+     *
+     * Key physical rules (source: Downhole Diagnostic / Shawn):
+     *   - Gas interference: A-B corner ROUNDED (gas expansion delays pressure drop).
+     *     Liquid is incompressible → sharp A-B = NOT gas interference.
+     *   - Fluid pound: C-D transition is SHARP (plunger hits liquid surface).
+     *     Both A-B and C-D are right angles when fluid pound (liquid in/out).
+     *   - SV leak: downstroke load elevated above zero (fluid leaks back through SV).
+     *   - TV leak: upstroke load declining (fluid leaks past plunger).
+     *   - Full pump: rectangular card, high area, flat top/bottom, late load drop.
+     *   - Gas lock: card collapsed to tiny ellipse, neither valve opens.
+     *   - Rod part: very small flat card, minimal load variation.
      *
      * @param {Object} features - From extractFeatures()
-     * @returns {Array} [{pattern, confidence, matchDetails}, ...] sorted by confidence desc
+     * @returns {Array} [{pattern, confidence, matchDetails, physicsRule}, ...]
      */
     function diagnose(features) {
         if (!features || features.error) return [];
 
+        var f = features;
+        var ar = f.areaRatio, ft = f.flatTop, fb = f.flatBottom;
+        var fp = f.fluidPoundIdx, cd = f.cdSharpness, ab = f.abSharpness;
+        var dnE = f.dnLoadElev, upD = f.upDropPt;
+
+        if (ar === undefined || cd === undefined || ab === undefined) return [];
+
+        // ── Step 1: Physics-based hard rules ──
+        // Each rule produces {id, confidence, reason} entries.
+        var physicsResults = [];
+
+        // Rule 1: Rod part — very small flat card
+        if (ar < 0.20 && ft < 0.20 && fb < 0.20) {
+            physicsResults.push({
+                id: 'rod_part', confidence: 0.95,
+                reason: 'Very small flat card (area=' + ar.toFixed(2) + '). Minimal load variation — rod string parted, no pump action.'
+            });
+        }
+
+        // Rule 2: Gas lock — card collapsed to sliver
+        if (ar < 0.15) {
+            physicsResults.push({
+                id: 'gas_lock', confidence: 0.90,
+                reason: 'Card area collapsed to ' + ar.toFixed(2) + '. Neither valve opening — gas just compresses and expands each stroke.'
+            });
+        }
+
+        // Rule 3: Full pump — rectangular card with sharp transitions
+        // Published: high area, flat top AND bottom, load maintained through stroke
+        if (ar > 0.72 && ft > 0.65 && fb > 0.55 && upD > 0.85) {
+            physicsResults.push({
+                id: 'full_pump', confidence: 0.85,
+                reason: 'Rectangular card (area=' + ar.toFixed(2) + ', flatTop=' + ft.toFixed(2) + ', flatBot=' + fb.toFixed(2) + '). Load maintained to ' + Math.round(upD * 100) + '% of stroke.'
+            });
+        }
+
+        // Rule 4: Gas interference — BOTH corners rounded (banana/football shape)
+        // Published (Downhole Diagnostic): "rounded upper-left corner due to gas expansion"
+        // Gas compresses before valves open → gradual transitions at BOTH A-B and C-D.
+        // Physical mechanism: gas is compressible, liquid is not.
+        // Sharp A-B (ab > 0.4) rules OUT gas interference.
+        if (ab < 0.35 && cd < 0.35 && ar > 0.25 && ar < 0.80) {
+            physicsResults.push({
+                id: 'gas_interference', confidence: 0.80,
+                reason: 'Both A-B (' + ab.toFixed(2) + ') and C-D (' + cd.toFixed(2) + ') corners rounded — banana/football shape. Gas compression delays valve action at both transitions.'
+            });
+        } else if (ab < 0.25 && ar > 0.25 && ar < 0.80) {
+            // Even if C-D is sharp, very rounded A-B suggests gas expansion on upstroke
+            physicsResults.push({
+                id: 'gas_interference', confidence: 0.65,
+                reason: 'A-B corner rounded (' + ab.toFixed(2) + ') — gas expansion delays pressure drop on upstroke. Partial gas interference.'
+            });
+        }
+
+        // Rule 5: Fluid pound — sharp transitions, reduced area
+        // Published: "fluid load picked up and released INSTANTLY — right angles"
+        // Plunger hits liquid surface → sharp C-D. Liquid incompressible → sharp A-B.
+        if (cd > 0.30 && ab > 0.30 && ar < 0.80 && upD < 0.90) {
+            physicsResults.push({
+                id: 'fluid_pound', confidence: 0.75,
+                reason: 'Sharp A-B (' + ab.toFixed(2) + ') and C-D (' + cd.toFixed(2) + ') transitions — liquid incompressible, right-angle valve action. Load drops at ' + Math.round(upD * 100) + '% of upstroke.'
+            });
+        }
+
+        // Rule 6: TV leak — declining upstroke load (fluid leaks past plunger)
+        // Published: "upper corners rounded off", "load falls off during upstroke"
+        if (f.upstrokeSlope < -0.20 && ft < 0.50) {
+            physicsResults.push({
+                id: 'tv_leak', confidence: 0.70,
+                reason: 'Upstroke load declining (slope=' + f.upstrokeSlope.toFixed(2) + ', flatTop=' + ft.toFixed(2) + '). Fluid leaking past TV/plunger during upstroke.'
+            });
+        }
+
+        // Rule 7: SV leak — elevated downstroke load (fluid leaks back through SV)
+        // Published: "bottom corners rounded", "premature loading from A to B"
+        if (dnE > 0.25 && f.downstrokeSlope > 0.10) {
+            physicsResults.push({
+                id: 'sv_leak', confidence: 0.70,
+                reason: 'Downstroke load elevated (' + dnE.toFixed(2) + '), rising bottom (slope=' + f.downstrokeSlope.toFixed(2) + '). Fluid leaking back through SV.'
+            });
+        }
+
+        // Rule 8: Bent barrel — asymmetric card (high flat top, low flat bottom)
+        // Published: "lower-left bent backwards, top-right sloped down", irregular transitions
+        if (ar > 0.65 && ft > 0.60 && fb < 0.35 && fp > 0.15) {
+            physicsResults.push({
+                id: 'bent_barrel', confidence: 0.65,
+                reason: 'Asymmetric: flatTop=' + ft.toFixed(2) + ' but flatBot=' + fb.toFixed(2) + '. Irregular load pattern — mechanical interference in pump.'
+            });
+        }
+
+        // Rule 9: Worn pump — reduced area but generally rectangular, both strokes affected
+        if (ar > 0.55 && ar < 0.82 && ft > 0.40 && fb > 0.40 && fp < 0.25) {
+            physicsResults.push({
+                id: 'worn_pump', confidence: 0.55,
+                reason: 'Reduced area (' + ar.toFixed(2) + ') but retains rectangular shape. Both strokes show some rounding — plunger-barrel clearance increased.'
+            });
+        }
+
+        // Rule 10: Incomplete fillage — moderate area reduction, no strong signature
+        if (ar > 0.50 && ar < 0.80 && fp < 0.30 && physicsResults.length === 0) {
+            physicsResults.push({
+                id: 'incomplete_fillage', confidence: 0.50,
+                reason: 'Moderate area reduction (' + ar.toFixed(2) + ') without clear fluid pound, gas interference, or valve leak signature.'
+            });
+        }
+
+        // ── Step 2: Centroid distance as secondary score ──
         var fNames = ['areaRatio', 'flatTop', 'flatBottom', 'fluidPoundIdx',
                       'svTransition', 'tvTransition', 'cdSharpness', 'abSharpness',
                       'dnLoadElev', 'upDropPt'];
         var fVec = [];
         for (var fi = 0; fi < fNames.length; fi++) {
-            var val = features[fNames[fi]];
+            var val = f[fNames[fi]];
             if (val === undefined || val === null || isNaN(val)) return [];
             fVec.push(val);
         }
 
-        var nFeatures = fVec.length;
-        var results = [];
-        var maxScore = -Infinity;
-
+        var centroidScores = {};
         for (var cid in CENTROIDS) {
             if (!CENTROIDS.hasOwnProperty(cid)) continue;
             var cent = CENTROIDS[cid];
-
-            // Normalized Euclidean distance
             var dist = 0;
-            var details = {};
-            for (var i = 0; i < nFeatures; i++) {
+            for (var i = 0; i < fVec.length; i++) {
                 var std = Math.max(cent.std[i], 0.05);
                 var d = (fVec[i] - cent.mean[i]) / std;
                 dist += d * d;
-                details[fNames[i]] = {
-                    actual: Math.round(fVec[i] * 1000) / 1000,
-                    centroid: Math.round(cent.mean[i] * 1000) / 1000,
-                    zScore: Math.round(d * 100) / 100,
-                };
             }
             dist = Math.sqrt(dist);
+            var bonus = Math.log(Math.max(cent.n, 1) + 1) * 0.3;
+            centroidScores[cid] = -dist + bonus;
+        }
 
-            // Sample-count bonus (log scale)
-            var sampleBonus = Math.log(Math.max(cent.n, 1) + 1) * 0.5;
-            var score = -dist + sampleBonus;
-            if (score > maxScore) maxScore = score;
+        // ── Step 3: Merge physics rules with centroid scores ──
+        // Physics rules get priority; centroid fills in gaps and adjusts confidence.
+        var merged = {};  // id → {confidence, reason, centroidRank}
 
-            // Find matching pattern object
+        // Rank centroids
+        var centroidRanked = Object.keys(centroidScores).sort(function (a, b) {
+            return centroidScores[b] - centroidScores[a];
+        });
+
+        // Start with physics results
+        for (var r = 0; r < physicsResults.length; r++) {
+            var pr = physicsResults[r];
+            if (!merged[pr.id]) {
+                merged[pr.id] = { confidence: pr.confidence, reason: pr.reason };
+            } else if (pr.confidence > merged[pr.id].confidence) {
+                merged[pr.id].confidence = pr.confidence;
+                merged[pr.id].reason = pr.reason;
+            }
+        }
+
+        // Add centroid top picks that physics didn't produce
+        for (var cr = 0; cr < Math.min(3, centroidRanked.length); cr++) {
+            var cid = centroidRanked[cr];
+            if (!merged[cid]) {
+                // Centroid-only picks get lower confidence
+                merged[cid] = {
+                    confidence: Math.max(0.15, 0.40 - cr * 0.12),
+                    reason: 'Statistical match (centroid distance rank #' + (cr + 1) + ').'
+                };
+            }
+        }
+
+        // Boost confidence when physics and centroid agree
+        if (centroidRanked.length > 0) {
+            var topCentroid = centroidRanked[0];
+            if (merged[topCentroid] && physicsResults.length > 0) {
+                for (var r = 0; r < physicsResults.length; r++) {
+                    if (physicsResults[r].id === topCentroid) {
+                        merged[topCentroid].confidence = Math.min(0.98,
+                            merged[topCentroid].confidence + 0.10);
+                        merged[topCentroid].reason += ' Confirmed by centroid classifier.';
+                        break;
+                    }
+                }
+            }
+        }
+
+        // ── Step 4: Build results array ──
+        var results = [];
+        for (var id in merged) {
+            if (!merged.hasOwnProperty(id)) continue;
             var pattern = null;
             for (var p = 0; p < PATTERNS.length; p++) {
-                if (PATTERNS[p].id === cid) { pattern = PATTERNS[p]; break; }
+                if (PATTERNS[p].id === id) { pattern = PATTERNS[p]; break; }
             }
             if (!pattern) continue;
 
             results.push({
                 pattern: pattern,
-                confidence: 0,  // filled below
-                distance: Math.round(dist * 100) / 100,
-                matchDetails: details,
-                _score: score,
+                confidence: Math.round(merged[id].confidence * 100) / 100,
+                physicsRule: merged[id].reason,
+                matchDetails: {},
             });
-        }
-
-        // Convert scores to confidence (0-1 range, best = 1)
-        if (results.length > 0) {
-            // Softmax-like: confidence = exp(-dist) normalized
-            var sumExp = 0;
-            for (var i = 0; i < results.length; i++) {
-                results[i]._exp = Math.exp(results[i]._score);
-                sumExp += results[i]._exp;
-            }
-            for (var i = 0; i < results.length; i++) {
-                results[i].confidence = Math.round((results[i]._exp / sumExp) * 100) / 100;
-                delete results[i]._exp;
-                delete results[i]._score;
-            }
         }
 
         results.sort(function (a, b) { return b.confidence - a.confidence; });

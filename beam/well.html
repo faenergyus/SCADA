@@ -6,8 +6,8 @@
     <title>Well Detail — Forty Acres Rod Status</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-    <script src="js/wave-equation.js?v=4"></script>
-    <script src="js/card-patterns.js?v=4"></script>
+    <script src="js/wave-equation.js?v=5"></script>
+    <script src="js/card-patterns.js?v=5"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -508,6 +508,9 @@
         html += '<span class="text-xs uppercase px-2 py-0.5 rounded-full bg-black/20">' +
             p.pattern.severity + '</span>';
         html += '</div>';
+        if (p.physicsRule) {
+            html += '<p class="text-sm mb-2 text-fae-gold/80"><strong>Evidence:</strong> ' + escapeHtml(p.physicsRule) + '</p>';
+        }
         html += '<p class="text-sm mb-2">' + escapeHtml(p.pattern.description) + '</p>';
         html += '<p class="text-sm opacity-80 mb-2"><strong>Operational:</strong> ' +
             escapeHtml(p.pattern.operationalMeaning) + '</p>';
@@ -527,7 +530,11 @@
             html += '<span class="text-xs px-2 py-0.5 rounded-full bg-black/30">' +
                 Math.round(s.confidence * 100) + '%</span>';
             html += '</div>';
-            html += '<p class="text-sm mt-1">' + escapeHtml(s.pattern.description) + '</p>';
+            if (s.physicsRule) {
+                html += '<p class="text-sm mt-1 text-fae-gold/70">' + escapeHtml(s.physicsRule) + '</p>';
+            } else {
+                html += '<p class="text-sm mt-1">' + escapeHtml(s.pattern.description) + '</p>';
+            }
             html += '</div>';
         }
 
