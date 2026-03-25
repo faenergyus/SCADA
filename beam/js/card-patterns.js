@@ -295,6 +295,37 @@ const CardPatterns = (function () {
             },
             weight: 0.7,
         },
+        // Level 1 merged conditions (displayed when L1 classifier fires)
+        {
+            id: 'under_filled',
+            name: 'Under-Filled Pump',
+            severity: 'warning',
+            description: 'Pump barrel not completely filling each stroke. May be fluid pound (plunger hits liquid surface) or gas interference (gas mixed with fluid). A fluid level shot is needed to distinguish — card shape alone cannot reliably differentiate these two conditions.',
+            operationalMeaning: 'Pump displacement exceeds available fluid. Production is reduced. If fluid level is at pump intake → fluid pound. If fluid level is above pump → gas interference.',
+            actions: [
+                'Take fluid level shot to distinguish fluid pound vs gas interference',
+                'If fluid pound: slow pump speed or lower pump',
+                'If gas interference: check gas separator, consider gas anchor',
+                'Monitor fillage trend',
+            ],
+            features: {},
+            weight: 1.0,
+        },
+        {
+            id: 'pump_issue',
+            name: 'Pump Mechanical Issue',
+            severity: 'caution',
+            description: 'Card shape indicates a mechanical pump issue — could be incomplete fillage, worn pump barrel, or bent barrel/sticking plunger. These conditions are geometrically similar and difficult to distinguish from the card shape alone.',
+            operationalMeaning: 'Pump is partially effective but has a mechanical issue reducing efficiency. May be progressive (worn barrel) or sudden (bent barrel).',
+            actions: [
+                'Compare with previous cards — is this new or progressive?',
+                'Check for sand production (causes barrel wear)',
+                'If efficiency declining: schedule pump replacement',
+                'If sudden change: check for bent barrel or sticking',
+            ],
+            features: {},
+            weight: 1.0,
+        },
     ];
 
     // -----------------------------------------------------------------------
@@ -643,24 +674,28 @@ const CardPatterns = (function () {
     //   dnLoadElev:  mean mid-downstroke load (high=SV leak)
     //   upDropPt:    fraction of upstroke before load drops (late=full pump)
     // -----------------------------------------------------------------------
-    // Centroids trained on 14,789 XSPOC-classified cards (14-day window, 2026-03-25).
-    // Previous version used 47 cards (1 per well) — these are 300x more data.
-    // Features: [ar, ft, fb, fp, sv, tv, cd, ab, dnE, upD]
+    // Two-level centroid classifier trained on 14,789 XSPOC-classified cards.
+    // Level 1: 6 broad classes (54% on 15K cards). Merges geometrically
+    // indistinguishable conditions: Worn pump/Bent barrel/Incomplete fillage
+    // → "Pump issue"; Fluid pound/Gas interference → "Under-filled".
+    // Level 2: sub-classifies within merged groups.
     //
-    // Key finding: Fluid pound vs Gas interference has near-zero separation
-    // on ab, dnE features. Published literature confirms card shape alone
-    // cannot distinguish these — a fluid level shot is needed.
-    // Sharp A-B (ab > 0.40) vetoes gas interference (liquid is incompressible).
+    // CENTROIDS is the Level 1 set used by diagnose().
+    // L2_CENTROIDS provides sub-classification shown as secondary diagnosis.
+    var L2_CENTROIDS = {
+        fluid_pound:        { mean: [0.648, 0.695, 0.488, 0.205, 0.274, 0.637, 0.307, 0.419, 0.208, 0.669], std: [0.152, 0.200, 0.164, 0.092, 0.586, 0.437, 0.287, 0.357, 0.125, 0.358], n: 5105, group: 'under_filled' },
+        gas_interference:   { mean: [0.608, 0.658, 0.431, 0.282, 0.347, 0.790, 0.179, 0.411, 0.213, 0.697], std: [0.123, 0.203, 0.177, 0.115, 0.528, 0.342, 0.209, 0.291, 0.099, 0.360], n: 931, group: 'under_filled' },
+        incomplete_fillage: { mean: [0.745, 0.655, 0.564, 0.183, 0.181, 0.823, 0.534, 0.520, 0.152, 0.604], std: [0.097, 0.186, 0.133, 0.078, 1.307, 0.313, 0.307, 0.281, 0.076, 0.367], n: 3552, group: 'pump_issue' },
+        worn_pump:          { mean: [0.739, 0.617, 0.599, 0.182, 0.860, 0.831, 0.648, 0.559, 0.097, 0.763], std: [0.132, 0.250, 0.196, 0.089, 0.310, 0.371, 0.370, 0.379, 0.064, 0.305], n: 460, group: 'pump_issue' },
+        bent_barrel:        { mean: [0.774, 0.716, 0.526, 0.218, 0.857, 0.918, 0.597, 0.576, 0.111, 0.809], std: [0.070, 0.206, 0.214, 0.069, 0.259, 0.184, 0.369, 0.319, 0.052, 0.258], n: 1057, group: 'pump_issue' },
+    };
     var CENTROIDS = {
-        bent_barrel:             { mean: [0.774, 0.716, 0.526, 0.218, 0.857, 0.918, 0.597, 0.576, 0.111, 0.809], std: [0.070, 0.206, 0.214, 0.069, 0.259, 0.184, 0.369, 0.319, 0.052, 0.258], n: 1057 },
-        fluid_pound:             { mean: [0.648, 0.695, 0.488, 0.205, 0.274, 0.637, 0.307, 0.419, 0.208, 0.669], std: [0.152, 0.200, 0.164, 0.092, 0.586, 0.437, 0.287, 0.357, 0.125, 0.358], n: 5105 },
-        full_pump:               { mean: [0.833, 0.729, 0.733, 0.159, 0.641, 0.983, 0.663, 0.735, 0.067, 0.887], std: [0.050, 0.116, 0.109, 0.050, 1.576, 0.110, 0.291, 0.228, 0.050, 0.217], n: 2309 },
-        gas_interference:        { mean: [0.608, 0.658, 0.431, 0.282, 0.347, 0.790, 0.179, 0.411, 0.213, 0.697], std: [0.123, 0.203, 0.177, 0.115, 0.528, 0.342, 0.209, 0.291, 0.099, 0.360], n: 931 },
-        incomplete_fillage:      { mean: [0.745, 0.655, 0.564, 0.183, 0.181, 0.823, 0.534, 0.520, 0.152, 0.604], std: [0.097, 0.186, 0.133, 0.078, 1.307, 0.313, 0.307, 0.281, 0.076, 0.367], n: 3552 },
-        rod_part:                { mean: [0.387, 0.213, 0.387, 0.150, 0.222, 0.359, 0.063, 0.034, 0.324, 0.312], std: [0.075, 0.215, 0.120, 0.050, 0.580, 0.535, 0.066, 0.105, 0.147, 0.121], n: 4 },
-        sv_leak:                 { mean: [0.713, 0.592, 0.459, 0.163, 0.547, 0.545, 0.356, 0.250, 0.125, 0.691], std: [0.122, 0.215, 0.163, 0.115, 0.455, 0.486, 0.370, 0.314, 0.062, 0.268], n: 813 },
-        tv_leak:                 { mean: [0.795, 0.582, 0.767, 0.156, 0.898, 0.952, 0.406, 0.381, 0.062, 0.771], std: [0.134, 0.213, 0.236, 0.050, 0.431, 0.173, 0.221, 0.194, 0.065, 0.247], n: 558 },
-        worn_pump:               { mean: [0.739, 0.617, 0.599, 0.182, 0.860, 0.831, 0.648, 0.559, 0.097, 0.763], std: [0.132, 0.250, 0.196, 0.089, 0.310, 0.371, 0.370, 0.379, 0.064, 0.305], n: 460 },
+        full_pump:    { mean: [0.833, 0.729, 0.733, 0.159, 0.641, 0.983, 0.663, 0.735, 0.067, 0.887], std: [0.050, 0.116, 0.109, 0.050, 1.576, 0.110, 0.291, 0.228, 0.050, 0.217], n: 2309 },
+        pump_issue:   { mean: [0.750, 0.664, 0.559, 0.190, 0.383, 0.843, 0.557, 0.535, 0.139, 0.661], std: [0.097, 0.199, 0.161, 0.079, 1.147, 0.300, 0.329, 0.300, 0.074, 0.353], n: 5069 },
+        rod_part:     { mean: [0.387, 0.213, 0.387, 0.150, 0.222, 0.359, 0.063, 0.034, 0.324, 0.312], std: [0.075, 0.215, 0.120, 0.050, 0.580, 0.535, 0.066, 0.105, 0.147, 0.121], n: 4 },
+        sv_leak:      { mean: [0.713, 0.592, 0.460, 0.163, 0.548, 0.546, 0.357, 0.251, 0.125, 0.691], std: [0.122, 0.215, 0.163, 0.115, 0.455, 0.486, 0.370, 0.314, 0.062, 0.268], n: 812 },
+        tv_leak:      { mean: [0.795, 0.582, 0.767, 0.156, 0.898, 0.952, 0.406, 0.381, 0.062, 0.771], std: [0.134, 0.213, 0.236, 0.050, 0.431, 0.173, 0.221, 0.194, 0.065, 0.247], n: 558 },
+        under_filled: { mean: [0.642, 0.690, 0.479, 0.217, 0.285, 0.661, 0.287, 0.418, 0.209, 0.673], std: [0.148, 0.201, 0.167, 0.100, 0.578, 0.427, 0.280, 0.347, 0.121, 0.358], n: 6036 },
     };
 
     /**
@@ -813,18 +848,16 @@ const CardPatterns = (function () {
                 var reason = 'Nearest centroid match (distance=' + centroidResults[i].dist.toFixed(1) + ').';
 
                 // Add physics reasoning when available
-                if (cid === 'gas_interference' && ab < 0.25 && cd < 0.30) {
-                    reason = 'Both A-B (' + ab.toFixed(2) + ') and C-D (' + cd.toFixed(2) + ') corners rounded — banana/football shape. Gas compression delays valve action. (Published: gas = sloped transitions, not vertical.)';
-                } else if (cid === 'fluid_pound' && cd > 0.25) {
-                    reason = 'Sharp C-D transition (' + cd.toFixed(2) + ') — plunger hits liquid surface. Incompressible fluid → right-angle valve action. (Published: fluid pound = impact spike at bottom-right.)';
+                if (cid === 'under_filled') {
+                    reason = 'Pump not filling completely (area=' + f.areaRatio.toFixed(2) + '). Take fluid level shot: if fluid at pump intake → fluid pound; if above pump → gas interference. (Published: card shape alone cannot reliably distinguish these.)';
+                } else if (cid === 'pump_issue') {
+                    reason = 'Mechanical pump issue detected (area=' + f.areaRatio.toFixed(2) + ', flatBot=' + f.flatBottom.toFixed(2) + '). Could be incomplete fillage, worn barrel, or bent barrel. Compare with previous cards for trend.';
                 } else if (cid === 'tv_leak' && f.upstrokeSlope < -0.15) {
                     reason = 'Upstroke load declining (slope=' + f.upstrokeSlope.toFixed(2) + '). Fluid leaking past TV/plunger during upstroke. (Published: TV leak = upper corners rounded off, load falls during upstroke.)';
                 } else if (cid === 'sv_leak' && dnE > 0.20) {
                     reason = 'Downstroke load elevated (' + dnE.toFixed(2) + '). Fluid leaking back through SV during downstroke. (Published: SV leak = downstroke load higher than normal.)';
                 } else if (cid === 'full_pump') {
                     reason = 'Rectangular card (area=' + f.areaRatio.toFixed(2) + '). (Published: ideal pump card approaches perfect rectangle.)';
-                } else if (cid === 'incomplete_fillage') {
-                    reason = 'Moderate area reduction (' + f.areaRatio.toFixed(2) + ') without strong valve leak or gas signature. Partial fillage.';
                 }
 
                 results.push({
@@ -837,6 +870,60 @@ const CardPatterns = (function () {
         }
 
         results.sort(function (a, b) { return b.confidence - a.confidence; });
+
+        // ── Level 2: Sub-classify merged groups ──
+        // If primary is "under_filled" or "pump_issue", find the best L2 sub-type
+        // and add it as secondary diagnosis with physics reasoning.
+        if (results.length > 0) {
+            var primaryId = results[0].pattern.id;
+            if (primaryId === 'under_filled' || primaryId === 'pump_issue') {
+                var bestSub = null, bestSubScore = -Infinity;
+                for (var sid in L2_CENTROIDS) {
+                    if (!L2_CENTROIDS.hasOwnProperty(sid)) continue;
+                    if (L2_CENTROIDS[sid].group !== primaryId) continue;
+                    var sc = L2_CENTROIDS[sid];
+                    var sDist = 0;
+                    for (var i = 0; i < fVec.length; i++) {
+                        var sStd = Math.max(sc.std[i], 0.05);
+                        var sD = (fVec[i] - sc.mean[i]) / sStd;
+                        sDist += sD * sD;
+                    }
+                    sDist = Math.sqrt(sDist);
+                    if (-sDist > bestSubScore) {
+                        bestSubScore = -sDist;
+                        bestSub = sid;
+                    }
+                }
+                if (bestSub) {
+                    var subPattern = null;
+                    for (var p = 0; p < PATTERNS.length; p++) {
+                        if (PATTERNS[p].id === bestSub) { subPattern = PATTERNS[p]; break; }
+                    }
+                    if (subPattern) {
+                        var subReason = 'Sub-classification within ' + results[0].pattern.name + '.';
+                        if (bestSub === 'gas_interference') {
+                            subReason = 'C-D sharpness=' + cd.toFixed(2) + ', A-B sharpness=' + ab.toFixed(2) + '. If both rounded → gas interference. Confirm with fluid level shot.';
+                        } else if (bestSub === 'fluid_pound') {
+                            subReason = 'Fluid pound likely if fluid level is at pump intake. Card shows reduced area (' + f.areaRatio.toFixed(2) + ').';
+                        } else if (bestSub === 'incomplete_fillage') {
+                            subReason = 'Moderate area reduction without strong mechanical signature. Pump partially filling.';
+                        } else if (bestSub === 'worn_pump') {
+                            subReason = 'Card retains rectangular shape but reduced area. Progressive efficiency loss.';
+                        } else if (bestSub === 'bent_barrel') {
+                            subReason = 'Asymmetric card — possible mechanical interference in pump barrel.';
+                        }
+                        // Insert as secondary (position 1)
+                        results.splice(1, 0, {
+                            pattern: subPattern,
+                            confidence: Math.round(Math.max(0.20, results[0].confidence * 0.6) * 100) / 100,
+                            physicsRule: subReason,
+                            matchDetails: {},
+                        });
+                    }
+                }
+            }
+        }
+
         return results;
     }
 
