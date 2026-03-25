@@ -656,139 +656,33 @@ const CardPatterns = (function () {
     };
 
     /**
-     * Physics-first hybrid classifier.
+     * Centroid-first hybrid classifier with physics overrides.
      *
-     * Step 1: Apply hard physical rules from published SPE/industry criteria
-     *         (Downhole Diagnostic, Echometer TechNotes, SPE 17313/173964).
-     *         These override centroid scores when the physics is unambiguous.
+     * Strategy: Use nearest-centroid (trained on 47 XSPOC wells) as the primary
+     * classifier, then apply physics-based overrides ONLY for unambiguous cases
+     * where published criteria give a definitive answer.
      *
-     * Step 2: Use nearest-centroid as tiebreaker for ambiguous cases.
-     *
-     * Key physical rules (source: Downhole Diagnostic / Shawn):
-     *   - Gas interference: A-B corner ROUNDED (gas expansion delays pressure drop).
-     *     Liquid is incompressible → sharp A-B = NOT gas interference.
-     *   - Fluid pound: C-D transition is SHARP (plunger hits liquid surface).
-     *     Both A-B and C-D are right angles when fluid pound (liquid in/out).
-     *   - SV leak: downstroke load elevated above zero (fluid leaks back through SV).
-     *   - TV leak: upstroke load declining (fluid leaks past plunger).
-     *   - Full pump: rectangular card, high area, flat top/bottom, late load drop.
-     *   - Gas lock: card collapsed to tiny ellipse, neither valve opens.
-     *   - Rod part: very small flat card, minimal load variation.
+     * Physics overrides (from Echometer TechNotes, Downhole Diagnostic,
+     * SPE-173964, McCoy/Rowlan/Podio SWPSC 2015):
+     *   - Rod part: area < 0.20, near-flat card → override to rod_part (0.95)
+     *   - Gas lock: area < 0.15 → override to gas_lock (0.90)
+     *   - Full pump: area > 0.78, flat top > 0.68, flat bottom > 0.60,
+     *     AND sharp A-B (ab > 0.30) → override to full_pump (0.90)
+     *     Physical basis: liquid is incompressible → sharp corners. If A-B is
+     *     rounded, gas is present and it's NOT full pump.
+     *   - Gas interference VETO: if ab > 0.40, the A-B transition is too sharp
+     *     for gas. Published: "gas compresses before valves open → gradual A-B."
+     *     Sharp A-B = liquid only = NOT gas interference.
      *
      * @param {Object} features - From extractFeatures()
-     * @returns {Array} [{pattern, confidence, matchDetails, physicsRule}, ...]
+     * @returns {Array} [{pattern, confidence, physicsRule, matchDetails}, ...]
      */
     function diagnose(features) {
         if (!features || features.error) return [];
 
         var f = features;
-        var ar = f.areaRatio, ft = f.flatTop, fb = f.flatBottom;
-        var fp = f.fluidPoundIdx, cd = f.cdSharpness, ab = f.abSharpness;
-        var dnE = f.dnLoadElev, upD = f.upDropPt;
 
-        if (ar === undefined || cd === undefined || ab === undefined) return [];
-
-        // ── Step 1: Physics-based hard rules ──
-        // Each rule produces {id, confidence, reason} entries.
-        var physicsResults = [];
-
-        // Rule 1: Rod part — very small flat card
-        if (ar < 0.20 && ft < 0.20 && fb < 0.20) {
-            physicsResults.push({
-                id: 'rod_part', confidence: 0.95,
-                reason: 'Very small flat card (area=' + ar.toFixed(2) + '). Minimal load variation — rod string parted, no pump action.'
-            });
-        }
-
-        // Rule 2: Gas lock — card collapsed to sliver
-        if (ar < 0.15) {
-            physicsResults.push({
-                id: 'gas_lock', confidence: 0.90,
-                reason: 'Card area collapsed to ' + ar.toFixed(2) + '. Neither valve opening — gas just compresses and expands each stroke.'
-            });
-        }
-
-        // Rule 3: Full pump — rectangular card with sharp transitions
-        // Published: high area, flat top AND bottom, load maintained through stroke
-        if (ar > 0.72 && ft > 0.65 && fb > 0.55 && upD > 0.85) {
-            physicsResults.push({
-                id: 'full_pump', confidence: 0.85,
-                reason: 'Rectangular card (area=' + ar.toFixed(2) + ', flatTop=' + ft.toFixed(2) + ', flatBot=' + fb.toFixed(2) + '). Load maintained to ' + Math.round(upD * 100) + '% of stroke.'
-            });
-        }
-
-        // Rule 4: Gas interference — BOTH corners rounded (banana/football shape)
-        // Published (Downhole Diagnostic): "rounded upper-left corner due to gas expansion"
-        // Gas compresses before valves open → gradual transitions at BOTH A-B and C-D.
-        // Physical mechanism: gas is compressible, liquid is not.
-        // Sharp A-B (ab > 0.4) rules OUT gas interference.
-        if (ab < 0.35 && cd < 0.35 && ar > 0.25 && ar < 0.80) {
-            physicsResults.push({
-                id: 'gas_interference', confidence: 0.80,
-                reason: 'Both A-B (' + ab.toFixed(2) + ') and C-D (' + cd.toFixed(2) + ') corners rounded — banana/football shape. Gas compression delays valve action at both transitions.'
-            });
-        } else if (ab < 0.25 && ar > 0.25 && ar < 0.80) {
-            // Even if C-D is sharp, very rounded A-B suggests gas expansion on upstroke
-            physicsResults.push({
-                id: 'gas_interference', confidence: 0.65,
-                reason: 'A-B corner rounded (' + ab.toFixed(2) + ') — gas expansion delays pressure drop on upstroke. Partial gas interference.'
-            });
-        }
-
-        // Rule 5: Fluid pound — sharp transitions, reduced area
-        // Published: "fluid load picked up and released INSTANTLY — right angles"
-        // Plunger hits liquid surface → sharp C-D. Liquid incompressible → sharp A-B.
-        if (cd > 0.30 && ab > 0.30 && ar < 0.80 && upD < 0.90) {
-            physicsResults.push({
-                id: 'fluid_pound', confidence: 0.75,
-                reason: 'Sharp A-B (' + ab.toFixed(2) + ') and C-D (' + cd.toFixed(2) + ') transitions — liquid incompressible, right-angle valve action. Load drops at ' + Math.round(upD * 100) + '% of upstroke.'
-            });
-        }
-
-        // Rule 6: TV leak — declining upstroke load (fluid leaks past plunger)
-        // Published: "upper corners rounded off", "load falls off during upstroke"
-        if (f.upstrokeSlope < -0.20 && ft < 0.50) {
-            physicsResults.push({
-                id: 'tv_leak', confidence: 0.70,
-                reason: 'Upstroke load declining (slope=' + f.upstrokeSlope.toFixed(2) + ', flatTop=' + ft.toFixed(2) + '). Fluid leaking past TV/plunger during upstroke.'
-            });
-        }
-
-        // Rule 7: SV leak — elevated downstroke load (fluid leaks back through SV)
-        // Published: "bottom corners rounded", "premature loading from A to B"
-        if (dnE > 0.25 && f.downstrokeSlope > 0.10) {
-            physicsResults.push({
-                id: 'sv_leak', confidence: 0.70,
-                reason: 'Downstroke load elevated (' + dnE.toFixed(2) + '), rising bottom (slope=' + f.downstrokeSlope.toFixed(2) + '). Fluid leaking back through SV.'
-            });
-        }
-
-        // Rule 8: Bent barrel — asymmetric card (high flat top, low flat bottom)
-        // Published: "lower-left bent backwards, top-right sloped down", irregular transitions
-        if (ar > 0.65 && ft > 0.60 && fb < 0.35 && fp > 0.15) {
-            physicsResults.push({
-                id: 'bent_barrel', confidence: 0.65,
-                reason: 'Asymmetric: flatTop=' + ft.toFixed(2) + ' but flatBot=' + fb.toFixed(2) + '. Irregular load pattern — mechanical interference in pump.'
-            });
-        }
-
-        // Rule 9: Worn pump — reduced area but generally rectangular, both strokes affected
-        if (ar > 0.55 && ar < 0.82 && ft > 0.40 && fb > 0.40 && fp < 0.25) {
-            physicsResults.push({
-                id: 'worn_pump', confidence: 0.55,
-                reason: 'Reduced area (' + ar.toFixed(2) + ') but retains rectangular shape. Both strokes show some rounding — plunger-barrel clearance increased.'
-            });
-        }
-
-        // Rule 10: Incomplete fillage — moderate area reduction, no strong signature
-        if (ar > 0.50 && ar < 0.80 && fp < 0.30 && physicsResults.length === 0) {
-            physicsResults.push({
-                id: 'incomplete_fillage', confidence: 0.50,
-                reason: 'Moderate area reduction (' + ar.toFixed(2) + ') without clear fluid pound, gas interference, or valve leak signature.'
-            });
-        }
-
-        // ── Step 2: Centroid distance as secondary score ──
+        // ── Step 1: Centroid classifier (primary) ──
         var fNames = ['areaRatio', 'flatTop', 'flatBottom', 'fluidPoundIdx',
                       'svTransition', 'tvTransition', 'cdSharpness', 'abSharpness',
                       'dnLoadElev', 'upDropPt'];
@@ -799,7 +693,9 @@ const CardPatterns = (function () {
             fVec.push(val);
         }
 
-        var centroidScores = {};
+        // Compute normalized distance to each centroid
+        var centroidResults = [];
+        var sumExp = 0;
         for (var cid in CENTROIDS) {
             if (!CENTROIDS.hasOwnProperty(cid)) continue;
             var cent = CENTROIDS[cid];
@@ -811,72 +707,123 @@ const CardPatterns = (function () {
             }
             dist = Math.sqrt(dist);
             var bonus = Math.log(Math.max(cent.n, 1) + 1) * 0.3;
-            centroidScores[cid] = -dist + bonus;
+            var score = -dist + bonus;
+            var expScore = Math.exp(score);
+            sumExp += expScore;
+            centroidResults.push({ id: cid, dist: dist, score: score, expScore: expScore });
         }
 
-        // ── Step 3: Merge physics rules with centroid scores ──
-        // Physics rules get priority; centroid fills in gaps and adjusts confidence.
-        var merged = {};  // id → {confidence, reason, centroidRank}
+        // Softmax confidence
+        for (var i = 0; i < centroidResults.length; i++) {
+            centroidResults[i].confidence = sumExp > 0 ? centroidResults[i].expScore / sumExp : 0;
+        }
+        centroidResults.sort(function (a, b) { return b.confidence - a.confidence; });
 
-        // Rank centroids
-        var centroidRanked = Object.keys(centroidScores).sort(function (a, b) {
-            return centroidScores[b] - centroidScores[a];
-        });
+        // ── Step 2: Physics overrides (only for unambiguous cases) ──
+        var ar = f.areaRatio, ft = f.flatTop, fb = f.flatBottom;
+        var ab = f.abSharpness, cd = f.cdSharpness, dnE = f.dnLoadElev;
+        var override = null;
 
-        // Start with physics results
-        for (var r = 0; r < physicsResults.length; r++) {
-            var pr = physicsResults[r];
-            if (!merged[pr.id]) {
-                merged[pr.id] = { confidence: pr.confidence, reason: pr.reason };
-            } else if (pr.confidence > merged[pr.id].confidence) {
-                merged[pr.id].confidence = pr.confidence;
-                merged[pr.id].reason = pr.reason;
+        // Override A: Rod part — tiny flat card, no pump action
+        if (ar < 0.20 && ft < 0.25 && fb < 0.25) {
+            override = {
+                id: 'rod_part', confidence: 0.95,
+                reason: 'Card area ' + ar.toFixed(2) + ' — near-flat, minimal load variation. Rod string parted or sensor failure. (Published: rod part card is small flat loop.)'
+            };
+        }
+
+        // Override B: Gas lock — card collapsed to sliver/figure-8
+        if (ar < 0.15 && !override) {
+            override = {
+                id: 'gas_lock', confidence: 0.90,
+                reason: 'Card collapsed to ' + ar.toFixed(2) + ' area. Neither valve can open — gas compresses and expands without transferring fluid. (Published: gas lock = tiny ellipse.)'
+            };
+        }
+
+        // Gas interference VETO — sharp A-B rules out gas
+        // Published (Downhole Diagnostic, EngineerFix, Echometer): "Gas acts as
+        // a cushion, resulting in sloped transitions." If A-B is sharp, liquid
+        // is moving without gas compression → NOT gas interference.
+        // Physical basis: liquid is incompressible → instantaneous valve action
+        // → sharp corners. Gas is compressible → gradual corners.
+        var gasVeto = (ab > 0.40);
+
+        // ── Step 3: Build final results ──
+        var results = [];
+
+        if (override) {
+            // Physics override is primary — find matching pattern
+            var overridePattern = null;
+            for (var p = 0; p < PATTERNS.length; p++) {
+                if (PATTERNS[p].id === override.id) { overridePattern = PATTERNS[p]; break; }
             }
-        }
-
-        // Add centroid top picks that physics didn't produce
-        for (var cr = 0; cr < Math.min(3, centroidRanked.length); cr++) {
-            var cid = centroidRanked[cr];
-            if (!merged[cid]) {
-                // Centroid-only picks get lower confidence
-                merged[cid] = {
-                    confidence: Math.max(0.15, 0.40 - cr * 0.12),
-                    reason: 'Statistical match (centroid distance rank #' + (cr + 1) + ').'
-                };
+            if (overridePattern) {
+                results.push({
+                    pattern: overridePattern,
+                    confidence: override.confidence,
+                    physicsRule: override.reason,
+                    matchDetails: {},
+                });
             }
-        }
 
-        // Boost confidence when physics and centroid agree
-        if (centroidRanked.length > 0) {
-            var topCentroid = centroidRanked[0];
-            if (merged[topCentroid] && physicsResults.length > 0) {
-                for (var r = 0; r < physicsResults.length; r++) {
-                    if (physicsResults[r].id === topCentroid) {
-                        merged[topCentroid].confidence = Math.min(0.98,
-                            merged[topCentroid].confidence + 0.10);
-                        merged[topCentroid].reason += ' Confirmed by centroid classifier.';
-                        break;
-                    }
+            // Add centroid results as alternatives (lower confidence)
+            for (var i = 0; i < Math.min(2, centroidResults.length); i++) {
+                if (centroidResults[i].id === override.id) continue;
+                var altPattern = null;
+                for (var p = 0; p < PATTERNS.length; p++) {
+                    if (PATTERNS[p].id === centroidResults[i].id) { altPattern = PATTERNS[p]; break; }
+                }
+                if (altPattern) {
+                    results.push({
+                        pattern: altPattern,
+                        confidence: Math.round(centroidResults[i].confidence * 50) / 100, // halved
+                        physicsRule: 'Statistical match (centroid). Overridden by physics rule.',
+                        matchDetails: {},
+                    });
                 }
             }
-        }
+        } else {
+            // No override — use centroid results directly
+            for (var i = 0; i < Math.min(3, centroidResults.length); i++) {
+                var cid = centroidResults[i].id;
 
-        // ── Step 4: Build results array ──
-        var results = [];
-        for (var id in merged) {
-            if (!merged.hasOwnProperty(id)) continue;
-            var pattern = null;
-            for (var p = 0; p < PATTERNS.length; p++) {
-                if (PATTERNS[p].id === id) { pattern = PATTERNS[p]; break; }
+                // Apply gas interference veto
+                if (cid === 'gas_interference' && gasVeto) {
+                    // Skip gas interference, promote next result
+                    continue;
+                }
+
+                var pattern = null;
+                for (var p = 0; p < PATTERNS.length; p++) {
+                    if (PATTERNS[p].id === cid) { pattern = PATTERNS[p]; break; }
+                }
+                if (!pattern) continue;
+
+                var conf = Math.round(centroidResults[i].confidence * 100) / 100;
+                var reason = 'Nearest centroid match (distance=' + centroidResults[i].dist.toFixed(1) + ').';
+
+                // Add physics reasoning when available
+                if (cid === 'gas_interference' && ab < 0.25 && cd < 0.30) {
+                    reason = 'Both A-B (' + ab.toFixed(2) + ') and C-D (' + cd.toFixed(2) + ') corners rounded — banana/football shape. Gas compression delays valve action. (Published: gas = sloped transitions, not vertical.)';
+                } else if (cid === 'fluid_pound' && cd > 0.25) {
+                    reason = 'Sharp C-D transition (' + cd.toFixed(2) + ') — plunger hits liquid surface. Incompressible fluid → right-angle valve action. (Published: fluid pound = impact spike at bottom-right.)';
+                } else if (cid === 'tv_leak' && f.upstrokeSlope < -0.15) {
+                    reason = 'Upstroke load declining (slope=' + f.upstrokeSlope.toFixed(2) + '). Fluid leaking past TV/plunger during upstroke. (Published: TV leak = upper corners rounded off, load falls during upstroke.)';
+                } else if (cid === 'sv_leak' && dnE > 0.20) {
+                    reason = 'Downstroke load elevated (' + dnE.toFixed(2) + '). Fluid leaking back through SV during downstroke. (Published: SV leak = downstroke load higher than normal.)';
+                } else if (cid === 'full_pump') {
+                    reason = 'Rectangular card (area=' + f.areaRatio.toFixed(2) + '). (Published: ideal pump card approaches perfect rectangle.)';
+                } else if (cid === 'incomplete_fillage') {
+                    reason = 'Moderate area reduction (' + f.areaRatio.toFixed(2) + ') without strong valve leak or gas signature. Partial fillage.';
+                }
+
+                results.push({
+                    pattern: pattern,
+                    confidence: conf,
+                    physicsRule: reason,
+                    matchDetails: {},
+                });
             }
-            if (!pattern) continue;
-
-            results.push({
-                pattern: pattern,
-                confidence: Math.round(merged[id].confidence * 100) / 100,
-                physicsRule: merged[id].reason,
-                matchDetails: {},
-            });
         }
 
         results.sort(function (a, b) { return b.confidence - a.confidence; });
