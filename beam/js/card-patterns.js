@@ -298,15 +298,15 @@ const CardPatterns = (function () {
         // Level 1 merged conditions (displayed when L1 classifier fires)
         {
             id: 'under_filled',
-            name: 'Under-Filled Pump',
+            name: 'Incomplete Fillage',
             severity: 'warning',
-            description: 'Pump barrel not completely filling each stroke. May be fluid pound (plunger hits liquid surface) or gas interference (gas mixed with fluid). A fluid level shot is needed to distinguish — card shape alone cannot reliably differentiate these two conditions.',
-            operationalMeaning: 'Pump displacement exceeds available fluid. Production is reduced. If fluid level is at pump intake → fluid pound. If fluid level is above pump → gas interference.',
+            description: 'Pump barrel not completely filling each stroke. May be fluid pound (plunger hits liquid surface) or gas interference (gas mixed with fluid). A fluid level shot is needed to distinguish — card shape alone cannot reliably differentiate these two conditions (published: near-zero feature separation).',
+            operationalMeaning: 'Pump displacement exceeds available fluid or gas is entering the barrel. Production is reduced. If fluid level is at pump intake → fluid pound. If fluid level is above pump → gas interference.',
             actions: [
                 'Take fluid level shot to distinguish fluid pound vs gas interference',
-                'If fluid pound: slow pump speed or lower pump',
-                'If gas interference: check gas separator, consider gas anchor',
-                'Monitor fillage trend',
+                'If fluid pound: reduce SPM or lower pump',
+                'If gas interference: check gas separator/anchor',
+                'Monitor fillage trend over time',
             ],
             features: {},
             weight: 1.0,

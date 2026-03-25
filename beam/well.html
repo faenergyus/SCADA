@@ -387,7 +387,13 @@
         // Majority diagnosis across all loaded cards (temporal stability)
         var majority = getMajorityDiagnosis(cards, rodModel);
 
-        runDiagnostics(diagCard, rodModel, wellCalc, surfData, cards, idx, majority);
+        // Card type and state detection
+        var cardType = card.CardType || '?';
+        var isAnalysis = (cardType === 'N');  // N = Analysis (has XDiag DH)
+        var isScan = (cardType === 'S');      // S = Scan (raw, no XDiag)
+        var isPOC = (cardType === 'P');       // P = POC controller card
+
+        runDiagnostics(diagCard, rodModel, wellCalc, surfData, cards, idx, majority, cardType, dhData);
 
         // Info below charts
         var infoStr = 'SPM: ' + vf(card.SPM, 1) +
@@ -609,7 +615,7 @@
         };
     }
 
-    function runDiagnostics(cardData, rodModel, wellCalc, surfData, allCards, cardIdx, majority) {
+    function runDiagnostics(cardData, rodModel, wellCalc, surfData, allCards, cardIdx, majority, cardType, hasXDiagDH) {
         var panel = document.getElementById('diagnosisPanel');
         var content = document.getElementById('diagnosisContent');
 
@@ -709,6 +715,17 @@
             }
             html += '</div>';
         }
+
+        // ── Card type indicator ──
+        var typeMap = { S: 'Scan', N: 'Analysis', P: 'POC', V: 'VFD' };
+        var typeName = typeMap[cardType] || cardType || '?';
+        var typeColor = hasXDiagDH ? 'text-green-400' : 'text-yellow-400';
+        html += '<div class="flex items-center gap-3 mb-2 text-xs">';
+        html += '<span class="px-2 py-0.5 rounded bg-gray-800 ' + typeColor + '">Card: ' + typeName + ' (' + cardType + ')</span>';
+        if (!hasXDiagDH) {
+            html += '<span class="text-yellow-500">No XDiag downhole card — diagnosis based on FAE wave equation calc or surface card features. Less reliable.</span>';
+        }
+        html += '</div>';
 
         // ── Sanity check warning ──
         if (sanityNote) {
