@@ -797,8 +797,8 @@
         // ── Majority diagnosis (temporal context) ──
         if (majority && majority.total >= 2) {
             var majPattern = null;
-            for (var p = 0; p < PATTERNS.length; p++) {
-                if (PATTERNS[p].id === majority.id) { majPattern = PATTERNS[p]; break; }
+            for (var p = 0; p < CardPatterns.PATTERNS.length; p++) {
+                if (CardPatterns.PATTERNS[p].id === majority.id) { majPattern = CardPatterns.PATTERNS[p]; break; }
             }
             var majName = majPattern ? majPattern.name : majority.id;
             var majColor = majority.pct > 80 ? 'text-green-400' : majority.pct > 50 ? 'text-yellow-400' : 'text-gray-400';
