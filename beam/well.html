@@ -6,8 +6,8 @@
     <title>Well Detail — Forty Acres Rod Status</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-    <script src="js/wave-equation.js?v=6"></script>
-    <script src="js/card-patterns.js?v=6"></script>
+    <script src="js/wave-equation.js?v=7"></script>
+    <script src="js/card-patterns.js?v=7"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -372,17 +372,29 @@
         // Plot downhole with XSPOC, POC, and FAE overlays
         plotDownholeCard(dhData, pocData, faeCard);
 
+        // Calculate expected loads from well data
+        var wellCalc = null;
+        if (rodModel) {
+            wellCalc = calculateExpectedLoads(rodModel, surfData);
+        }
+
         // Run diagnostics on the best available downhole card
+        // IMPORTANT: Use XDiag DH card (correct plunger-load reference frame).
+        // Do NOT use POC DH card (true sinker-bar load, different reference).
+        // Fall back to FAE Calc (transfer matrix) if no XDiag available.
         var diagCard = dhData || faeCard;
-        runDiagnostics(diagCard, rodModel);
+        runDiagnostics(diagCard, rodModel, wellCalc, surfData, cards, idx);
 
         // Info below charts
         var infoStr = 'SPM: ' + vf(card.SPM, 1) +
             ' | Stroke: ' + v(card.StrokeLength, '"') +
             ' | Fillage: ' + vf(card.Fillage, 1, '%');
+        if (wellCalc) {
+            infoStr += ' | Fo=' + wellCalc.Fo + ' lbs, FAP=' + wellCalc.estFAP + ' ft';
+        }
         if (faeCard && faeCard.meta) {
-            infoStr += ' | FAE Calc: ' + faeCard.meta.method + ', ζ=' + faeCard.meta.dampingFactor +
-                ', c=' + faeCard.meta.avgWaveSpeedFtS + ' ft/s, Wr=' + faeCard.meta.buoyantRodWt + ' lbs';
+            infoStr += ' | FAE: ζ=' + faeCard.meta.dampingFactor +
+                ', c=' + faeCard.meta.avgWaveSpeedFtS + ' ft/s';
         }
         document.getElementById('cardInfo').textContent = infoStr;
     }
@@ -470,7 +482,59 @@
         Plotly.newPlot(el, traces, layout, { responsive: true, displayModeBar: false });
     }
 
-    function runDiagnostics(cardData, rodModel) {
+    /**
+     * Calculate expected loads from well data.
+     * Fo = fluid load on plunger = fluid_gradient × pump_depth × plunger_area
+     * FAP = fluid above pump depth (from actual card loads)
+     */
+    function calculateExpectedLoads(rodModel, surfData) {
+        if (!rodModel || !rodModel.pumpDepth) return null;
+        var PI = Math.PI;
+        var plungerArea = PI * rodModel.plungerDiam * rodModel.plungerDiam / 4;
+        var fluidGrad = rodModel.fluidSG * 0.433; // psi/ft
+        var Fo = Math.round(fluidGrad * (rodModel.pumpDepth / 12) * plungerArea);
+
+        // Buoyant rod weight
+        var buoyWt = 0;
+        var fluidDens = rodModel.fluidSG * 62.4 / 1728;
+        for (var s = 0; s < rodModel.sections.length; s++) {
+            var sec = rodModel.sections[s];
+            var bf = 1 - fluidDens / sec.wDens;
+            buoyWt += sec.weightPerIn * sec.length * bf;
+        }
+        buoyWt = Math.round(buoyWt);
+
+        // Expected PPRL and MPRL (simplified, no dynamic load)
+        var expPPRL = Fo + buoyWt;
+        var expMPRL = buoyWt;
+
+        // Actual surface card stats
+        var actPPRL = null, actMPRL = null;
+        if (surfData && surfData.load && surfData.load.length > 0) {
+            actPPRL = Math.max.apply(null, surfData.load);
+            actMPRL = Math.min.apply(null, surfData.load);
+        }
+
+        // Estimated FAP from actual surface loads
+        var actualFo = (actPPRL && actMPRL) ? actPPRL - actMPRL : 0;
+        var estFAP = (fluidGrad > 0 && plungerArea > 0) ?
+            Math.round(actualFo / (fluidGrad * plungerArea)) : 0;
+
+        return {
+            Fo: Fo,                   // calculated fluid load (lbs)
+            buoyWt: buoyWt,           // buoyant rod weight (lbs)
+            expPPRL: expPPRL,         // expected peak polished rod load
+            expMPRL: expMPRL,         // expected min polished rod load
+            actPPRL: actPPRL ? Math.round(actPPRL) : null,
+            actMPRL: actMPRL ? Math.round(actMPRL) : null,
+            actualFo: Math.round(actualFo),
+            estFAP: estFAP,           // estimated fluid above pump (ft)
+            plungerArea: plungerArea,
+            fluidGrad: fluidGrad,
+        };
+    }
+
+    function runDiagnostics(cardData, rodModel, wellCalc, surfData, allCards, cardIdx) {
         var panel = document.getElementById('diagnosisPanel');
         var content = document.getElementById('diagnosisContent');
 
@@ -485,6 +549,36 @@
             return;
         }
 
+        // ── Surface card sanity check ──
+        // If surface loads are in normal range (within 30% of expected PPRL/MPRL),
+        // the pump is working. Override critical diagnoses like "Rod Part" that
+        // would be impossible with normal surface loads.
+        var surfaceSane = false;
+        var sanityNote = '';
+        if (wellCalc && wellCalc.actPPRL && wellCalc.expPPRL > 0) {
+            var pprlRatio = wellCalc.actPPRL / wellCalc.expPPRL;
+            var mprlRatio = wellCalc.expMPRL > 0 ? wellCalc.actMPRL / wellCalc.expMPRL : 1;
+            surfaceSane = (pprlRatio > 0.60 && pprlRatio < 1.50);
+
+            if (surfaceSane && result.primary.pattern.id === 'rod_part') {
+                sanityNote = 'Surface card shows normal loads (PPRL=' + wellCalc.actPPRL +
+                    ' vs expected ' + wellCalc.expPPRL + '). Rods are intact — "Rod Part" diagnosis overridden. ' +
+                    'This card may be a scan-type (S) without XDiag processing.';
+                // Demote rod_part, promote next match
+                if (result.secondary) {
+                    result.primary = result.secondary;
+                    result.secondary = null;
+                } else {
+                    result.primary.pattern = { id: 'sensor_issue', name: 'Card Data Issue',
+                        severity: 'info', description: 'Downhole card data does not match surface conditions. ' +
+                        'This may be a scan-type card without wave equation processing, or a POC card using a different load reference frame.',
+                        operationalMeaning: 'Surface loads confirm the pump is operating normally. The downhole card shape is unreliable for this card type.',
+                        actions: ['Compare with adjacent Analysis (N) cards', 'Verify card type (S vs N vs P)'] };
+                    result.primary.confidence = 0.50;
+                }
+            }
+        }
+
         panel.classList.remove('hidden');
 
         var severityColors = {
@@ -496,6 +590,34 @@
         };
 
         var html = '';
+
+        // ── Calculated Reference Values ──
+        if (wellCalc) {
+            html += '<div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3 text-xs">';
+            html += '<div class="bg-gray-800 rounded px-2 py-1.5"><span class="text-gray-500">Calc Fo:</span> <span class="text-fae-gold">' + wellCalc.Fo + ' lbs</span></div>';
+            html += '<div class="bg-gray-800 rounded px-2 py-1.5"><span class="text-gray-500">Actual Fo:</span> <span class="text-gray-200">' + wellCalc.actualFo + ' lbs</span></div>';
+            html += '<div class="bg-gray-800 rounded px-2 py-1.5"><span class="text-gray-500">Est FAP:</span> <span class="text-fae-gold">' + wellCalc.estFAP + ' ft</span></div>';
+            html += '<div class="bg-gray-800 rounded px-2 py-1.5"><span class="text-gray-500">Buoyant Wr:</span> <span class="text-gray-200">' + wellCalc.buoyWt + ' lbs</span></div>';
+            html += '<div class="bg-gray-800 rounded px-2 py-1.5"><span class="text-gray-500">Exp PPRL:</span> <span class="text-gray-200">' + wellCalc.expPPRL + ' lbs</span></div>';
+            html += '<div class="bg-gray-800 rounded px-2 py-1.5"><span class="text-gray-500">Act PPRL:</span> <span class="text-gray-200">' + (wellCalc.actPPRL || '—') + ' lbs</span></div>';
+            html += '<div class="bg-gray-800 rounded px-2 py-1.5"><span class="text-gray-500">Exp MPRL:</span> <span class="text-gray-200">' + wellCalc.expMPRL + ' lbs</span></div>';
+            html += '<div class="bg-gray-800 rounded px-2 py-1.5"><span class="text-gray-500">Act MPRL:</span> <span class="text-gray-200">' + (wellCalc.actMPRL || '—') + ' lbs</span></div>';
+            // Estimated fillage from Fo
+            var estFillage = wellCalc.Fo > 0 ? Math.round(wellCalc.actualFo / wellCalc.Fo * 100) : null;
+            if (estFillage !== null) {
+                html += '<div class="bg-gray-800 rounded px-2 py-1.5 col-span-2"><span class="text-gray-500">Est Fillage (from Fo):</span> <span class="' +
+                    (estFillage > 90 ? 'text-green-400' : estFillage > 60 ? 'text-yellow-400' : 'text-red-400') +
+                    '">' + estFillage + '%</span></div>';
+            }
+            html += '</div>';
+        }
+
+        // ── Sanity check warning ──
+        if (sanityNote) {
+            html += '<div class="border rounded-lg p-3 mb-3 bg-blue-900/30 text-blue-300 border-blue-700">';
+            html += '<strong>Surface Card Check:</strong> ' + escapeHtml(sanityNote);
+            html += '</div>';
+        }
 
         // Primary diagnosis
         var p = result.primary;
