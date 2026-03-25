@@ -6,8 +6,8 @@
     <title>Well Detail — Forty Acres Rod Status</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-    <script src="js/wave-equation.js?v=9"></script>
-    <script src="js/card-patterns.js?v=9"></script>
+    <script src="js/wave-equation.js?v=10"></script>
+    <script src="js/card-patterns.js?v=10"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -383,7 +383,11 @@
         // Do NOT use POC DH card (true sinker-bar load, different reference).
         // Fall back to FAE Calc (transfer matrix) if no XDiag available.
         var diagCard = dhData || faeCard;
-        runDiagnostics(diagCard, rodModel, wellCalc, surfData, cards, idx);
+
+        // Majority diagnosis across all loaded cards (temporal stability)
+        var majority = getMajorityDiagnosis(cards, rodModel);
+
+        runDiagnostics(diagCard, rodModel, wellCalc, surfData, cards, idx, majority);
 
         // Info below charts
         var infoStr = 'SPM: ' + vf(card.SPM, 1) +
@@ -483,10 +487,33 @@
     }
 
     /**
-     * Calculate expected loads from well data.
-     * Fo = fluid load on plunger = fluid_gradient × pump_depth × plunger_area
-     * FAP = fluid above pump depth (from actual card loads)
+     * Diagnose all loaded cards and return majority condition.
+     * This provides temporal stability — a single outlier card doesn't
+     * flip the diagnosis. XSPOC itself changes diagnosis 30-40% of the
+     * time between consecutive cards on the same well.
      */
+    function getMajorityDiagnosis(allCards, rodModel) {
+        if (!allCards || allCards.length === 0) return null;
+        var counts = {};
+        var total = 0;
+        for (var c = 0; c < allCards.length; c++) {
+            var dhData = allCards[c].DownholeCardB || allCards[c].DownholeCard || null;
+            if (!dhData || !dhData.position || dhData.position.length < 10) continue;
+            var result = CardPatterns.analyzeCard(dhData.position, dhData.load, rodModel);
+            if (result && result.primary) {
+                var id = result.primary.pattern.id;
+                counts[id] = (counts[id] || 0) + 1;
+                total++;
+            }
+        }
+        if (total === 0) return null;
+        var best = null, bestN = 0;
+        for (var id in counts) {
+            if (counts[id] > bestN) { bestN = counts[id]; best = id; }
+        }
+        return { id: best, count: bestN, total: total, pct: Math.round(bestN / total * 100) };
+    }
+
     /**
      * Calculate expected loads and Fo reference lines.
      *
@@ -582,7 +609,7 @@
         };
     }
 
-    function runDiagnostics(cardData, rodModel, wellCalc, surfData, allCards, cardIdx) {
+    function runDiagnostics(cardData, rodModel, wellCalc, surfData, allCards, cardIdx, majority) {
         var panel = document.getElementById('diagnosisPanel');
         var content = document.getElementById('diagnosisContent');
 
@@ -661,6 +688,24 @@
                 var fillColor = estFillage > 90 ? 'text-green-400' : estFillage > 60 ? 'text-yellow-400' : 'text-red-400';
                 html += '<div class="bg-gray-800 rounded px-2 py-1.5 col-span-2"><span class="text-gray-500">FAE Est Fillage:</span> <span class="' + fillColor + '">' + estFillage + '%</span>';
                 html += ' <span class="text-gray-600 text-[10px]">(Fo ratio: actual/calc)</span></div>';
+            }
+            html += '</div>';
+        }
+
+        // ── Majority diagnosis (temporal context) ──
+        if (majority && majority.total >= 2) {
+            var majPattern = null;
+            for (var p = 0; p < PATTERNS.length; p++) {
+                if (PATTERNS[p].id === majority.id) { majPattern = PATTERNS[p]; break; }
+            }
+            var majName = majPattern ? majPattern.name : majority.id;
+            var majColor = majority.pct > 80 ? 'text-green-400' : majority.pct > 50 ? 'text-yellow-400' : 'text-gray-400';
+            html += '<div class="bg-gray-800/50 rounded-lg p-2 mb-3 text-sm flex items-center gap-3">';
+            html += '<span class="text-gray-500">Trend (' + majority.total + ' cards):</span>';
+            html += '<span class="font-semibold ' + majColor + '">' + escapeHtml(majName) + '</span>';
+            html += '<span class="text-gray-500">' + majority.pct + '% of recent cards</span>';
+            if (result.primary && result.primary.pattern.id !== majority.id && majority.pct > 70) {
+                html += '<span class="text-yellow-500 text-xs">&larr; current card disagrees with trend</span>';
             }
             html += '</div>';
         }
