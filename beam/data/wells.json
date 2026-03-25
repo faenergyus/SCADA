@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "exported_at": "2026-03-25T16:31:07.201680",
+    "exported_at": "2026-03-25T16:35:01.717159",
     "well_count": 64
   },
   "wells": [
@@ -11,7 +11,7 @@
       "Enabled": true,
       "CommStatus": "OK",
       "RunStatus": "Running - Pump Fillage",
-      "LastGoodScanTime": "2026-03-25T16:24:30",
+      "LastGoodScanTime": "2026-03-25T16:32:35",
       "TodayRuntime": 11.100000381469727,
       "YestRuntimePct": 97.88999938964844,
       "TodayRuntimePct": 97.62000274658203,
@@ -21,7 +21,10 @@
       "HighPriAlarm": "Bad Real Time C",
       "LastAlarmDate": "2026-03-23T23:06:39",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 11,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 1
     },
     {
       "NodeID": "Arnott Ramsay NCT-B #020",
@@ -40,7 +43,10 @@
       "HighPriAlarm": "Bad Real Time C",
       "LastAlarmDate": "2026-03-20T11:57:09",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 20,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 17
     },
     {
       "NodeID": "Arnott Ramsay NCT-B #021",
@@ -49,17 +55,20 @@
       "Enabled": true,
       "CommStatus": "OK",
       "RunStatus": "Running - Pump Fillage",
-      "LastGoodScanTime": "2026-03-25T16:27:46",
-      "TodayRuntime": 6.599999904632568,
+      "LastGoodScanTime": "2026-03-25T16:32:43",
+      "TodayRuntime": 6.699999809265137,
       "YestRuntimePct": 62.939998626708984,
-      "TodayRuntimePct": 57.959999084472656,
-      "PumpFillage": 95,
+      "TodayRuntimePct": 58.459999084472656,
+      "PumpFillage": 94,
       "LastAnalCondition": "Severe SV leak. Phase shift in dyno card. ",
-      "InferredProd": 28.100000381469727,
+      "InferredProd": 28.700000762939453,
       "HighPriAlarm": "Bad Real Time C",
       "LastAlarmDate": "2026-03-21T16:54:35",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 10,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 4
     },
     {
       "NodeID": "B Davis #003",
@@ -68,17 +77,20 @@
       "Enabled": true,
       "CommStatus": "OK",
       "RunStatus": "Running, Timer",
-      "LastGoodScanTime": "2026-03-25T16:28:07",
-      "TodayRuntime": 9.5,
+      "LastGoodScanTime": "2026-03-25T16:32:55",
+      "TodayRuntime": 9.600000381469727,
       "YestRuntimePct": 83.2699966430664,
-      "TodayRuntimePct": 82.77999877929688,
+      "TodayRuntimePct": 82.91000366210938,
       "PumpFillage": 0,
       "LastAnalCondition": "Fluid pound. Possible SV leak. ",
       "InferredProd": 0.0,
       "HighPriAlarm": "",
       "LastAlarmDate": "2026-03-20T11:19:50",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 50,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 9
     },
     {
       "NodeID": "Baylus Cade #004",
@@ -95,9 +107,12 @@
       "LastAnalCondition": "Incomplete pump fillage. ",
       "InferredProd": 0.0,
       "HighPriAlarm": " Logic 1",
-      "LastAlarmDate": "2026-03-25T16:26:31",
+      "LastAlarmDate": "2026-03-25T16:31:32",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 1386,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "Baylus Cade #006",
@@ -114,9 +129,12 @@
       "LastAnalCondition": "Severe TV leak. ",
       "InferredProd": 30.0,
       "HighPriAlarm": "",
-      "LastAlarmDate": "2026-03-25T16:26:25",
+      "LastAlarmDate": "2026-03-25T16:31:26",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 799,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "Baylus Cade #007",
@@ -135,7 +153,10 @@
       "HighPriAlarm": " Malf",
       "LastAlarmDate": "2025-11-21T11:32:06",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 1875,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "C D Woolworth #004",
@@ -144,17 +165,20 @@
       "Enabled": true,
       "CommStatus": "OK",
       "RunStatus": "Running",
-      "LastGoodScanTime": "2026-03-25T16:27:09",
-      "TodayRuntime": 3.200000047683716,
+      "LastGoodScanTime": "2026-03-25T16:32:11",
+      "TodayRuntime": 3.299999952316284,
       "YestRuntimePct": 27.0,
-      "TodayRuntimePct": 28.0,
-      "PumpFillage": 75,
+      "TodayRuntimePct": 29.0,
+      "PumpFillage": 70,
       "LastAnalCondition": "Fluid pound. Possible SV leak. ",
-      "InferredProd": 5.900000095367432,
+      "InferredProd": 6.099999904632568,
       "HighPriAlarm": "",
       "LastAlarmDate": "2026-03-24T16:04:04",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 9,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 6
     },
     {
       "NodeID": "C D Woolworth #005",
@@ -163,7 +187,7 @@
       "Enabled": true,
       "CommStatus": "OK",
       "RunStatus": "Shutdown, Lo Ld",
-      "LastGoodScanTime": "2026-03-25T16:25:59",
+      "LastGoodScanTime": "2026-03-25T16:34:54",
       "TodayRuntime": 0.0,
       "YestRuntimePct": 0.0,
       "TodayRuntimePct": 0.0,
@@ -173,7 +197,10 @@
       "HighPriAlarm": " Lo Ld",
       "LastAlarmDate": "2026-03-22T11:02:42",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 47954,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "C D Woolworth #006",
@@ -192,7 +219,10 @@
       "HighPriAlarm": "",
       "LastAlarmDate": "2026-03-22T13:19:09",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 24502,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "C D Woolworth #007",
@@ -201,8 +231,8 @@
       "Enabled": true,
       "CommStatus": "OK",
       "RunStatus": "Idle",
-      "LastGoodScanTime": "2026-03-25T16:26:48",
-      "TodayRuntime": 4.300000190734863,
+      "LastGoodScanTime": "2026-03-25T16:31:49",
+      "TodayRuntime": 4.400000095367432,
       "YestRuntimePct": 36.0,
       "TodayRuntimePct": 38.0,
       "PumpFillage": 54,
@@ -211,7 +241,10 @@
       "HighPriAlarm": "",
       "LastAlarmDate": "2026-03-24T22:25:37",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 9,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 10
     },
     {
       "NodeID": "C D Woolworth #008",
@@ -220,17 +253,20 @@
       "Enabled": true,
       "CommStatus": "OK",
       "RunStatus": "Running",
-      "LastGoodScanTime": "2026-03-25T16:25:49",
-      "TodayRuntime": 11.399999618530273,
+      "LastGoodScanTime": "2026-03-25T16:34:43",
+      "TodayRuntime": 11.600000381469727,
       "YestRuntimePct": 100.0,
       "TodayRuntimePct": 100.0,
-      "PumpFillage": 70,
+      "PumpFillage": 68,
       "LastAnalCondition": "Fluid pound. Possible SV leak. ",
-      "InferredProd": 30.299999237060547,
+      "InferredProd": 30.700000762939453,
       "HighPriAlarm": "",
       "LastAlarmDate": "2026-03-19T14:24:19",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 20405,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "C D Woolworth #010",
@@ -239,17 +275,20 @@
       "Enabled": true,
       "CommStatus": "OK",
       "RunStatus": "Running",
-      "LastGoodScanTime": "2026-03-25T16:26:56",
-      "TodayRuntime": 10.600000381469727,
+      "LastGoodScanTime": "2026-03-25T16:31:57",
+      "TodayRuntime": 10.800000190734863,
       "YestRuntimePct": 91.0,
-      "TodayRuntimePct": 93.0,
-      "PumpFillage": 96,
+      "TodayRuntimePct": 94.0,
+      "PumpFillage": 98,
       "LastAnalCondition": "Full pump. ",
-      "InferredProd": 35.20000076293945,
+      "InferredProd": 35.400001525878906,
       "HighPriAlarm": "",
       "LastAlarmDate": "2026-03-23T03:05:18",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 280,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 1
     },
     {
       "NodeID": "C E Lamunyon #030",
@@ -268,7 +307,10 @@
       "HighPriAlarm": "No RPM",
       "LastAlarmDate": "2025-03-14T11:27:22",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 4445,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "C E Lamunyon #040",
@@ -277,17 +319,20 @@
       "Enabled": true,
       "CommStatus": "OK",
       "RunStatus": "Running",
-      "LastGoodScanTime": "2026-03-25T16:25:22",
-      "TodayRuntime": 11.399999618530273,
+      "LastGoodScanTime": "2026-03-25T16:34:22",
+      "TodayRuntime": 11.600000381469727,
       "YestRuntimePct": 67.0,
       "TodayRuntimePct": 100.0,
-      "PumpFillage": 96,
+      "PumpFillage": 95,
       "LastAnalCondition": "Gas interference. Worn pump barrel. ",
       "InferredProd": 0.0,
       "HighPriAlarm": "",
       "LastAlarmDate": "2026-03-24T13:20:13",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 1569,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "C E Lamunyon #042",
@@ -306,7 +351,10 @@
       "HighPriAlarm": " Malf",
       "LastAlarmDate": "2025-08-29T08:36:46",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 18526,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "C E Lamunyon #044",
@@ -315,17 +363,20 @@
       "Enabled": true,
       "CommStatus": "OK",
       "RunStatus": "Idle",
-      "LastGoodScanTime": "2026-03-25T16:25:32",
-      "TodayRuntime": 4.099999904632568,
+      "LastGoodScanTime": "2026-03-25T16:34:29",
+      "TodayRuntime": 4.0,
       "YestRuntimePct": 27.0,
-      "TodayRuntimePct": 36.0,
+      "TodayRuntimePct": 35.0,
       "PumpFillage": 33,
       "LastAnalCondition": null,
       "InferredProd": 20.5,
       "HighPriAlarm": "",
       "LastAlarmDate": "2026-03-24T13:30:36",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 39,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 9
     },
     {
       "NodeID": "C E Lamunyon #060",
@@ -344,7 +395,10 @@
       "HighPriAlarm": " Stop Fail",
       "LastAlarmDate": "2025-08-29T08:37:19",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 9028,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "C E Lamunyon #070",
@@ -363,7 +417,10 @@
       "HighPriAlarm": "No RPM",
       "LastAlarmDate": "2025-04-30T05:17:51",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 1666,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "C E Lamunyon #073",
@@ -382,7 +439,10 @@
       "HighPriAlarm": "No RPM",
       "LastAlarmDate": "2025-11-21T11:32:12",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 1,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "C E Lamunyon #074",
@@ -401,7 +461,10 @@
       "HighPriAlarm": "",
       "LastAlarmDate": "2025-08-29T08:36:14",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 129,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 3
     },
     {
       "NodeID": "C E Lamunyon #075",
@@ -420,7 +483,10 @@
       "HighPriAlarm": "No RPM",
       "LastAlarmDate": "2025-11-21T11:32:48",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 2846,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "C E Lamunyon #080",
@@ -439,7 +505,10 @@
       "HighPriAlarm": "No RPM",
       "LastAlarmDate": "2025-07-15T09:26:56",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 84,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 4
     },
     {
       "NodeID": "E C Hill A #007",
@@ -458,7 +527,10 @@
       "HighPriAlarm": "",
       "LastAlarmDate": "2025-05-16T08:33:00",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 10,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 19
     },
     {
       "NodeID": "E C Hill B Fed #015",
@@ -467,7 +539,7 @@
       "Enabled": true,
       "CommStatus": "OK",
       "RunStatus": "Shutdown,No RPM",
-      "LastGoodScanTime": "2026-03-25T16:27:02",
+      "LastGoodScanTime": "2026-03-25T16:32:04",
       "TodayRuntime": 0.0,
       "YestRuntimePct": 0.0,
       "TodayRuntimePct": 0.0,
@@ -477,7 +549,10 @@
       "HighPriAlarm": "No RPM",
       "LastAlarmDate": "2026-03-18T01:02:49",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 26629,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "E C Hill B Fed #017",
@@ -496,7 +571,10 @@
       "HighPriAlarm": "",
       "LastAlarmDate": "2025-08-29T08:38:51",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 6137,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "E C Hill B Fed #018",
@@ -504,18 +582,21 @@
       "POCTypeDesc": "RPC Lufkin SAM",
       "Enabled": true,
       "CommStatus": "OK",
-      "RunStatus": "Running",
-      "LastGoodScanTime": "2026-03-25T16:27:34",
-      "TodayRuntime": 3.299999952316284,
+      "RunStatus": "Idle",
+      "LastGoodScanTime": "2026-03-25T16:32:35",
+      "TodayRuntime": 3.5,
       "YestRuntimePct": 37.0,
-      "TodayRuntimePct": 29.0,
-      "PumpFillage": 91,
+      "TodayRuntimePct": 30.0,
+      "PumpFillage": 6,
       "LastAnalCondition": "Incomplete pump fillage. Bent pump barrel or sticking plunger. ",
-      "InferredProd": 10.800000190734863,
+      "InferredProd": 11.0,
       "HighPriAlarm": "",
       "LastAlarmDate": "2026-03-24T02:00:38",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 1,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 15
     },
     {
       "NodeID": "E C Hill B Fed #020",
@@ -534,7 +615,10 @@
       "HighPriAlarm": "",
       "LastAlarmDate": "2026-03-24T12:00:05",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 12929,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "G G Travis #002",
@@ -553,7 +637,10 @@
       "HighPriAlarm": "No RPM",
       "LastAlarmDate": "2025-03-14T10:29:38",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 53135,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "G G Travis #003",
@@ -572,7 +659,10 @@
       "HighPriAlarm": "No RPM",
       "LastAlarmDate": "2025-08-27T05:02:29",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 18294,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "G G Travis #004",
@@ -591,7 +681,10 @@
       "HighPriAlarm": "",
       "LastAlarmDate": "2026-03-24T02:49:34",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 3250,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "Gillully B Fed RA A #010",
@@ -610,7 +703,10 @@
       "HighPriAlarm": "",
       "LastAlarmDate": "2026-03-19T02:22:15",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 5,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 13
     },
     {
       "NodeID": "Hi Top Fee #001",
@@ -627,9 +723,12 @@
       "LastAnalCondition": "Incomplete pump fillage. Possible TV leak. ",
       "InferredProd": 63.0,
       "HighPriAlarm": "",
-      "LastAlarmDate": "2026-03-25T16:27:34",
+      "LastAlarmDate": "2026-03-25T16:32:35",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 339,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "Seeton #1",
@@ -638,17 +737,20 @@
       "Enabled": true,
       "CommStatus": "OK",
       "RunStatus": "Running",
-      "LastGoodScanTime": "2026-03-25T16:25:42",
-      "TodayRuntime": 9.699999809265137,
+      "LastGoodScanTime": "2026-03-25T16:34:37",
+      "TodayRuntime": 9.800000190734863,
       "YestRuntimePct": 87.0,
       "TodayRuntimePct": 85.0,
-      "PumpFillage": 90,
+      "PumpFillage": 89,
       "LastAnalCondition": "Fluid pound. ",
-      "InferredProd": 39.70000076293945,
+      "InferredProd": 40.70000076293945,
       "HighPriAlarm": "",
       "LastAlarmDate": "2026-03-25T14:10:58",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 28,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 3
     },
     {
       "NodeID": "Seeton #2",
@@ -657,7 +759,7 @@
       "Enabled": true,
       "CommStatus": "OK",
       "RunStatus": "Idle",
-      "LastGoodScanTime": "2026-03-25T16:24:50",
+      "LastGoodScanTime": "2026-03-25T16:33:58",
       "TodayRuntime": 3.299999952316284,
       "YestRuntimePct": 21.0,
       "TodayRuntimePct": 29.0,
@@ -667,7 +769,10 @@
       "HighPriAlarm": "",
       "LastAlarmDate": "2026-03-24T14:35:51",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 21,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 16
     },
     {
       "NodeID": "Seeton #3",
@@ -686,7 +791,10 @@
       "HighPriAlarm": "",
       "LastAlarmDate": "2026-03-24T13:16:33",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 1622,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "Seeton #4",
@@ -695,17 +803,20 @@
       "Enabled": true,
       "CommStatus": "OK",
       "RunStatus": "Idle, %Timer",
-      "LastGoodScanTime": "2026-03-25T16:25:11",
-      "TodayRuntime": 2.4000000953674316,
+      "LastGoodScanTime": "2026-03-25T16:34:14",
+      "TodayRuntime": 2.299999952316284,
       "YestRuntimePct": 19.0,
-      "TodayRuntimePct": 21.0,
+      "TodayRuntimePct": 20.0,
       "PumpFillage": 26,
       "LastAnalCondition": "TV leak. ",
       "InferredProd": 4.599999904632568,
       "HighPriAlarm": "",
       "LastAlarmDate": "2026-03-24T13:20:07",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 29,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 16
     },
     {
       "NodeID": "State A AC 1 #043",
@@ -714,17 +825,20 @@
       "Enabled": true,
       "CommStatus": "OK",
       "RunStatus": "Running - Pump Fillage",
-      "LastGoodScanTime": "2026-03-25T16:28:14",
-      "TodayRuntime": 11.5,
+      "LastGoodScanTime": "2026-03-25T16:33:03",
+      "TodayRuntime": 11.600000381469727,
       "YestRuntimePct": 100.0,
       "TodayRuntimePct": 100.0,
-      "PumpFillage": 97,
+      "PumpFillage": 100,
       "LastAnalCondition": "Slight SV leak. ",
-      "InferredProd": 95.5999984741211,
+      "InferredProd": 96.30000305175781,
       "HighPriAlarm": "",
       "LastAlarmDate": "2026-03-20T12:50:16",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 7418,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "State A AC 1 #046",
@@ -743,7 +857,10 @@
       "HighPriAlarm": "Bad Real Time C",
       "LastAlarmDate": "2026-03-25T16:24:10",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 52,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 3
     },
     {
       "NodeID": "State A AC 1 #048",
@@ -762,7 +879,10 @@
       "HighPriAlarm": "",
       "LastAlarmDate": "2026-03-19T07:53:49",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 1581,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "State A AC 1 #061",
@@ -779,16 +899,19 @@
       "LastAnalCondition": "Incomplete pump fillage. Worn pump barrel. ",
       "InferredProd": 50.79999923706055,
       "HighPriAlarm": " Malf - Positio",
-      "LastAlarmDate": "2026-03-25T16:28:01",
+      "LastAlarmDate": "2026-03-25T16:32:53",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 33,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 1
     },
     {
       "NodeID": "State A AC 1 #064",
       "POCType": 17,
       "POCTypeDesc": "RPC ChampionX SMARTEN",
       "Enabled": true,
-      "CommStatus": "SocketConnectFail",
+      "CommStatus": "SocketConn",
       "RunStatus": "Running, Host",
       "LastGoodScanTime": "2026-02-13T09:45:08",
       "TodayRuntime": 4.800000190734863,
@@ -800,7 +923,10 @@
       "HighPriAlarm": "Bad Real Time C",
       "LastAlarmDate": "2026-03-25T16:24:24",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 3565,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "State A AC 1 #069",
@@ -819,7 +945,10 @@
       "HighPriAlarm": " Malf - Unable ",
       "LastAlarmDate": "2025-09-30T07:58:49",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 20510,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "State A AC 2 #023",
@@ -828,17 +957,20 @@
       "Enabled": true,
       "CommStatus": "OK",
       "RunStatus": "Running - Pump Fillage",
-      "LastGoodScanTime": "2026-03-25T16:24:34",
+      "LastGoodScanTime": "2026-03-25T16:33:02",
       "TodayRuntime": 11.399999618530273,
       "YestRuntimePct": 100.0,
       "TodayRuntimePct": 100.0,
       "PumpFillage": 98,
-      "LastAnalCondition": "Fluid pound. Bent pump barrel or sticking plunger. ",
+      "LastAnalCondition": "Incomplete pump fillage. Bent pump barrel or sticking plunger. ",
       "InferredProd": 195.39999389648438,
       "HighPriAlarm": "",
       "LastAlarmDate": "2026-03-24T08:08:27",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 24314,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "State A AC 2 #024",
@@ -847,7 +979,7 @@
       "Enabled": true,
       "CommStatus": "OK",
       "RunStatus": "Running - Pump Fillage",
-      "LastGoodScanTime": "2026-03-25T16:24:38",
+      "LastGoodScanTime": "2026-03-25T16:33:53",
       "TodayRuntime": 9.300000190734863,
       "YestRuntimePct": 62.290000915527344,
       "TodayRuntimePct": 81.77999877929688,
@@ -857,7 +989,10 @@
       "HighPriAlarm": "Bad Real Time C",
       "LastAlarmDate": "2026-03-25T15:53:59",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 458,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 4
     },
     {
       "NodeID": "State A AC 2 #025",
@@ -866,17 +1001,20 @@
       "Enabled": true,
       "CommStatus": "OK",
       "RunStatus": "Running - Pump Fillage",
-      "LastGoodScanTime": "2026-03-25T16:24:16",
+      "LastGoodScanTime": "2026-03-25T16:31:12",
       "TodayRuntime": 11.199999809265137,
       "YestRuntimePct": 100.0,
       "TodayRuntimePct": 98.48999786376953,
       "PumpFillage": 77,
-      "LastAnalCondition": "Gas interference. Worn pump barrel. ",
+      "LastAnalCondition": "Gas interference. Phase shift in dyno card. ",
       "InferredProd": 116.5,
       "HighPriAlarm": "Bad Real Time C",
       "LastAlarmDate": "2026-03-25T14:53:00",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 320,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 2
     },
     {
       "NodeID": "State A AC 2 #030",
@@ -885,17 +1023,20 @@
       "Enabled": true,
       "CommStatus": "OK",
       "RunStatus": "Running - Pump Fillage",
-      "LastGoodScanTime": "2026-03-25T16:24:26",
+      "LastGoodScanTime": "2026-03-25T16:31:46",
       "TodayRuntime": 11.399999618530273,
       "YestRuntimePct": 100.0,
       "TodayRuntimePct": 100.0,
       "PumpFillage": 92,
-      "LastAnalCondition": "Incomplete pump fillage. ",
+      "LastAnalCondition": "Fluid pound. Possible SV leak. ",
       "InferredProd": 197.39999389648438,
       "HighPriAlarm": "Bad Real Time C",
       "LastAlarmDate": "2026-03-25T15:18:33",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 10508,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "State A AC 2 #031",
@@ -914,7 +1055,10 @@
       "HighPriAlarm": " Malf - Unable ",
       "LastAlarmDate": "2025-09-30T07:58:19",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 28722,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "State A AC 3 #004",
@@ -933,7 +1077,10 @@
       "HighPriAlarm": "",
       "LastAlarmDate": "2024-12-20T16:23:39",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 9,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 9
     },
     {
       "NodeID": "State C Tr 11 #003",
@@ -942,7 +1089,7 @@
       "Enabled": true,
       "CommStatus": "OK",
       "RunStatus": "Shutdown",
-      "LastGoodScanTime": "2026-03-25T16:27:37",
+      "LastGoodScanTime": "2026-03-25T16:32:38",
       "TodayRuntime": 0.0,
       "YestRuntimePct": 0.0,
       "TodayRuntimePct": 0.0,
@@ -952,7 +1099,10 @@
       "HighPriAlarm": "Hi Load Viol",
       "LastAlarmDate": "2026-03-23T00:11:38",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 9883,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "State C Tr 11 #007",
@@ -971,7 +1121,10 @@
       "HighPriAlarm": "",
       "LastAlarmDate": "2026-03-25T05:35:25",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 37,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 12
     },
     {
       "NodeID": "State C Tr 11 #008",
@@ -980,17 +1133,20 @@
       "Enabled": true,
       "CommStatus": "OK",
       "RunStatus": "Idle",
-      "LastGoodScanTime": "2026-03-25T16:26:35",
-      "TodayRuntime": 1.7999999523162842,
+      "LastGoodScanTime": "2026-03-25T16:31:36",
+      "TodayRuntime": 1.7000000476837158,
       "YestRuntimePct": 21.0,
-      "TodayRuntimePct": 16.0,
+      "TodayRuntimePct": 15.0,
       "PumpFillage": 12,
       "LastAnalCondition": "Fluid pound. Phase shift in dyno card. ",
       "InferredProd": 6.900000095367432,
       "HighPriAlarm": "",
       "LastAlarmDate": "2026-03-24T02:49:24",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 29,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 13
     },
     {
       "NodeID": "State C Tr 11 #009",
@@ -1009,7 +1165,10 @@
       "HighPriAlarm": "Low Load Span",
       "LastAlarmDate": "2026-03-25T16:23:14",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 9679,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "Thomas A #003",
@@ -1018,17 +1177,20 @@
       "Enabled": true,
       "CommStatus": "OK",
       "RunStatus": "Idle, No RPM",
-      "LastGoodScanTime": "2026-03-25T16:26:42",
+      "LastGoodScanTime": "2026-03-25T16:31:43",
       "TodayRuntime": 11.399999618530273,
       "YestRuntimePct": 100.0,
-      "TodayRuntimePct": 100.0,
+      "TodayRuntimePct": 99.0,
       "PumpFillage": 98,
       "LastAnalCondition": "Slight TV leak. ",
       "InferredProd": 24.0,
       "HighPriAlarm": " No RPM",
       "LastAlarmDate": "2026-03-25T14:51:24",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 6,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 1
     },
     {
       "NodeID": "Thomas A #004_v2",
@@ -1047,7 +1209,10 @@
       "HighPriAlarm": "",
       "LastAlarmDate": "2026-03-25T11:34:43",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 56,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 2
     },
     {
       "NodeID": "Travis #5",
@@ -1066,7 +1231,10 @@
       "HighPriAlarm": "",
       "LastAlarmDate": "2026-03-25T12:21:18",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 9067,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "WEU 130",
@@ -1075,17 +1243,20 @@
       "Enabled": true,
       "CommStatus": "OK",
       "RunStatus": "Running - Pump Fillage",
-      "LastGoodScanTime": "2026-03-25T16:28:24",
+      "LastGoodScanTime": "2026-03-25T16:33:09",
       "TodayRuntime": 9.100000381469727,
       "YestRuntimePct": 53.90999984741211,
-      "TodayRuntimePct": 78.94000244140625,
+      "TodayRuntimePct": 79.0999984741211,
       "PumpFillage": 89,
       "LastAnalCondition": "Incomplete pump fillage. Possible TV leak. ",
-      "InferredProd": 57.5,
+      "InferredProd": 58.20000076293945,
       "HighPriAlarm": "Bad Real Time C",
       "LastAlarmDate": "2026-03-25T15:37:39",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 53,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 3
     },
     {
       "NodeID": "WEU 209",
@@ -1104,7 +1275,10 @@
       "HighPriAlarm": "",
       "LastAlarmDate": "2026-03-25T16:23:20",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 5,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 19
     },
     {
       "NodeID": "WEU 215",
@@ -1123,7 +1297,10 @@
       "HighPriAlarm": "",
       "LastAlarmDate": "2026-03-25T15:07:50",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 5,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 4
     },
     {
       "NodeID": "WEU 216",
@@ -1142,7 +1319,10 @@
       "HighPriAlarm": "",
       "LastAlarmDate": "2026-03-25T03:19:03",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 46,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 10
     },
     {
       "NodeID": "WEU 217",
@@ -1150,18 +1330,21 @@
       "POCTypeDesc": "RPC Lufkin SAM",
       "Enabled": true,
       "CommStatus": "OK",
-      "RunStatus": "Run-Stopping",
-      "LastGoodScanTime": "2026-03-25T16:25:01",
-      "TodayRuntime": 5.5,
+      "RunStatus": "Idle",
+      "LastGoodScanTime": "2026-03-25T16:34:07",
+      "TodayRuntime": 5.400000095367432,
       "YestRuntimePct": 47.0,
-      "TodayRuntimePct": 48.0,
+      "TodayRuntimePct": 47.0,
       "PumpFillage": 63,
       "LastAnalCondition": "Pump hitting down. Phase shift in dyno card. ",
       "InferredProd": 39.20000076293945,
       "HighPriAlarm": "",
       "LastAlarmDate": "2026-03-19T23:06:22",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 11,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 17
     },
     {
       "NodeID": "WEU 417",
@@ -1180,7 +1363,10 @@
       "HighPriAlarm": "",
       "LastAlarmDate": "2026-03-22T14:35:02",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 34691,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 0
     },
     {
       "NodeID": "WEU 511",
@@ -1189,7 +1375,7 @@
       "Enabled": true,
       "CommStatus": "OK",
       "RunStatus": "Idle",
-      "LastGoodScanTime": "2026-03-25T16:27:16",
+      "LastGoodScanTime": "2026-03-25T16:32:17",
       "TodayRuntime": 6.300000190734863,
       "YestRuntimePct": 52.0,
       "TodayRuntimePct": 55.0,
@@ -1199,7 +1385,10 @@
       "HighPriAlarm": "",
       "LastAlarmDate": "2026-03-24T01:49:15",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 28,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 5
     },
     {
       "NodeID": "WEU 513",
@@ -1218,7 +1407,10 @@
       "HighPriAlarm": "",
       "LastAlarmDate": "2026-03-24T23:17:15",
       "Latitude": null,
-      "Longitude": null
+      "Longitude": null,
+      "TimeInState": 16,
+      "RuntimeSinceStart": null,
+      "TodayCycles": 15
     }
   ]
 }
