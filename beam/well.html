@@ -6,8 +6,8 @@
     <title>Well Detail — Forty Acres Rod Status</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-    <script src="js/wave-equation.js?v=13"></script>
-    <script src="js/card-patterns.js?v=13"></script>
+    <script src="js/wave-equation.js?v=14"></script>
+    <script src="js/card-patterns.js?v=14"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -889,20 +889,22 @@
         }
         html += '</ul></div></div>';
 
-        // Secondary diagnosis (if any)
-        if (result.secondary && result.secondary.confidence > 0.3) {
-            var s = result.secondary;
+        // Secondary and compound diagnoses
+        for (var ri = 1; ri < result.allMatches.length && ri < 4; ri++) {
+            var s = result.allMatches[ri];
+            if (s.confidence < 0.10) continue;
             var sevClass2 = severityColors[s.pattern.severity] || severityColors.info;
-            html += '<div class="border rounded-lg p-3 mb-3 ' + sevClass2 + ' opacity-70">';
-            html += '<div class="flex items-center gap-3">';
-            html += '<span class="font-semibold">Also possible: ' + escapeHtml(s.pattern.name) + '</span>';
+            var isCompound = s.isSecondary;
+            var label = isCompound ? 'Also noted' : 'Also possible';
+            html += '<div class="border rounded-lg p-2 mb-2 ' + sevClass2 + ' opacity-' + (isCompound ? '60' : '70') + '">';
+            html += '<div class="flex flex-wrap items-center gap-2">';
+            html += '<span class="font-semibold text-sm">' + label + ': ' + escapeHtml(s.pattern.name) + '</span>';
             html += '<span class="text-xs px-2 py-0.5 rounded-full bg-black/30">' +
                 Math.round(s.confidence * 100) + '%</span>';
+            if (isCompound) html += '<span class="text-xs text-gray-500">(independent indicator)</span>';
             html += '</div>';
             if (s.physicsRule) {
-                html += '<p class="text-sm mt-1 text-fae-gold/70">' + escapeHtml(s.physicsRule) + '</p>';
-            } else {
-                html += '<p class="text-sm mt-1">' + escapeHtml(s.pattern.description) + '</p>';
+                html += '<p class="text-xs mt-1 text-fae-gold/70">' + escapeHtml(s.physicsRule) + '</p>';
             }
             html += '</div>';
         }

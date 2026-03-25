@@ -982,6 +982,85 @@ const CardPatterns = (function () {
             }
         }
 
+        // ── Level 3: Independent secondary condition flags ──
+        // These can co-exist with ANY primary condition (compound diagnoses).
+        // Based on published criteria, checked independently.
+        // Only add if not already the primary or L2 diagnosis.
+        var existingIds = {};
+        for (var i = 0; i < results.length; i++) {
+            existingIds[results[i].pattern.id] = true;
+        }
+
+        var secondaries = [];
+
+        // Phase shift: card appears rotated from expected orientation
+        // (Published: sensor timing or calibration issue, not a pump problem)
+        if (f.phaseShift > 0.25) {
+            secondaries.push({
+                id: 'phase_shift',
+                reason: 'Card may be phase-shifted (position encoder timing). Not a pump problem.',
+                conf: 0.15 + f.phaseShift * 0.3,
+            });
+        }
+
+        // Possible SV leak: elevated downstroke load mid-stroke
+        // (Published: SV leak = downstroke load higher than normal)
+        if (!existingIds['sv_leak'] && dnE > 0.18 && f.downstrokeSlope > 0.08) {
+            secondaries.push({
+                id: 'sv_leak',
+                reason: 'Possible SV leak: downstroke load elevated (' + (dnE * 100).toFixed(0) + '% of range), rising bottom (slope=' + f.downstrokeSlope.toFixed(2) + ').',
+                conf: 0.10 + dnE * 0.4,
+            });
+        }
+
+        // Possible TV leak: declining upstroke load
+        // (Published: TV leak = upper corners rounded, load falls during upstroke)
+        if (!existingIds['tv_leak'] && f.upstrokeSlope < -0.12 && f.flatTop < 0.55) {
+            secondaries.push({
+                id: 'tv_leak',
+                reason: 'Possible TV leak: upstroke load declining (slope=' + f.upstrokeSlope.toFixed(2) + '), flat top only ' + (f.flatTop * 100).toFixed(0) + '%.',
+                conf: 0.10 + Math.abs(f.upstrokeSlope) * 0.5,
+            });
+        }
+
+        // Worn pump barrel: reduced area but retains rectangular shape
+        if (!existingIds['worn_pump'] && f.areaRatio < 0.80 && f.areaRatio > 0.50 &&
+            f.flatTop > 0.40 && f.flatBottom > 0.35) {
+            secondaries.push({
+                id: 'worn_pump',
+                reason: 'Possible worn barrel: card area reduced to ' + (f.areaRatio * 100).toFixed(0) + '% but shape retained.',
+                conf: 0.15,
+            });
+        }
+
+        // Bent barrel / sticking plunger: asymmetric card
+        if (!existingIds['bent_barrel'] && f.symmetry < 0.45 && f.flatTop > 0.50 && f.flatBottom < 0.40) {
+            secondaries.push({
+                id: 'bent_barrel',
+                reason: 'Possible bent barrel: asymmetric card (symmetry=' + f.symmetry.toFixed(2) + '), flat top but irregular bottom.',
+                conf: 0.15,
+            });
+        }
+
+        // Add secondaries that don't duplicate existing results
+        for (var si = 0; si < secondaries.length; si++) {
+            var sec = secondaries[si];
+            if (existingIds[sec.id]) continue;
+            var secPattern = null;
+            for (var p = 0; p < PATTERNS.length; p++) {
+                if (PATTERNS[p].id === sec.id) { secPattern = PATTERNS[p]; break; }
+            }
+            if (secPattern) {
+                results.push({
+                    pattern: secPattern,
+                    confidence: Math.round(sec.conf * 100) / 100,
+                    physicsRule: sec.reason,
+                    matchDetails: {},
+                    isSecondary: true,
+                });
+            }
+        }
+
         return results;
     }
 
