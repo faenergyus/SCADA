@@ -567,6 +567,37 @@ const CardPatterns = (function () {
             if (abCount > 0) abSharpness = Math.min(1, (abSum / abCount) / 15.0);
         }
 
+        // Max single-step slope at C-D and A-B transitions (normalized).
+        // This captures "impact" vs "gradual" transitions better than avg slope.
+        // Published: gas interference has low max (gradual), fluid pound has high
+        // max (plunger impact on liquid surface), full pump has very high max.
+        // Normalized by dividing by 50 (typical max range for strong impacts).
+        var cdMaxSlope = 0;
+        if (downIndices.length > 5) {
+            var cdSeg2 = downIndices.slice(0, Math.max(5, Math.floor(downIndices.length * 3 / 10)));
+            for (var k = 1; k < cdSeg2.length; k++) {
+                var dp2 = Math.abs(normPos[cdSeg2[k]] - normPos[cdSeg2[k - 1]]);
+                if (dp2 > 0.001) {
+                    var sl = (normLoad[cdSeg2[k - 1]] - normLoad[cdSeg2[k]]) / dp2;
+                    if (sl > cdMaxSlope) cdMaxSlope = sl;
+                }
+            }
+            cdMaxSlope = Math.min(1, cdMaxSlope / 50.0);
+        }
+
+        var abMaxSlope = 0;
+        if (upIndices.length > 5) {
+            var abSeg2 = upIndices.slice(0, Math.max(5, Math.floor(upIndices.length * 3 / 10)));
+            for (var k = 1; k < abSeg2.length; k++) {
+                var dp2 = Math.abs(normPos[abSeg2[k]] - normPos[abSeg2[k - 1]]);
+                if (dp2 > 0.001) {
+                    var sl = (normLoad[abSeg2[k]] - normLoad[abSeg2[k - 1]]) / dp2;
+                    if (sl > abMaxSlope) abMaxSlope = sl;
+                }
+            }
+            abMaxSlope = Math.min(1, abMaxSlope / 50.0);
+        }
+
         // Downstroke load elevation (mean mid-downstroke load, normalized)
         // High = SV leak (downstroke load elevated above zero line)
         var dnLoadElev = 0;
@@ -616,6 +647,8 @@ const CardPatterns = (function () {
             phaseShift: phaseShift,
             cdSharpness: cdSharpness,
             abSharpness: abSharpness,
+            cdMaxSlope: cdMaxSlope,
+            abMaxSlope: abMaxSlope,
             dnLoadElev: dnLoadElev,
             upDropPt: upDropPt,
             // Raw stats for display
