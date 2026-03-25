@@ -880,17 +880,42 @@ const CardPatterns = (function () {
                 var conf = Math.round(centroidResults[i].confidence * 100) / 100;
                 var reason = 'Nearest centroid match (distance=' + centroidResults[i].dist.toFixed(1) + ').';
 
-                // Add physics reasoning when available
+                // Build data-rich physics reasoning for each condition
+                var lr = f._loadRange ? Math.round(f._loadRange) : '?';
+                var pr = f._posRange ? f._posRange.toFixed(1) : '?';
                 if (cid === 'under_filled') {
-                    reason = 'Pump not filling completely (area=' + f.areaRatio.toFixed(2) + '). Take fluid level shot: if fluid at pump intake → fluid pound; if above pump → gas interference. (Published: card shape alone cannot reliably distinguish these.)';
+                    reason = 'Incomplete fillage: card area ' + (f.areaRatio * 100).toFixed(0) + '% of ideal. ';
+                    reason += 'Load range ' + lr + ' lbs over ' + pr + ' in stroke. ';
+                    if (ab < 0.25 && cd < 0.30) {
+                        reason += 'Both corners rounded (A-B=' + ab.toFixed(2) + ', C-D=' + cd.toFixed(2) + ') — suggests gas interference (banana shape). ';
+                    } else if (cd > 0.30) {
+                        reason += 'Sharp C-D transition (' + cd.toFixed(2) + ') — suggests fluid pound (plunger impact on liquid). ';
+                    }
+                    reason += 'Take fluid level shot to confirm: fluid at pump = fluid pound, above pump = gas.';
                 } else if (cid === 'pump_issue') {
-                    reason = 'Mechanical pump issue detected (area=' + f.areaRatio.toFixed(2) + ', flatBot=' + f.flatBottom.toFixed(2) + '). Could be incomplete fillage, worn barrel, or bent barrel. Compare with previous cards for trend.';
-                } else if (cid === 'tv_leak' && f.upstrokeSlope < -0.15) {
-                    reason = 'Upstroke load declining (slope=' + f.upstrokeSlope.toFixed(2) + '). Fluid leaking past TV/plunger during upstroke. (Published: TV leak = upper corners rounded off, load falls during upstroke.)';
-                } else if (cid === 'sv_leak' && dnE > 0.20) {
-                    reason = 'Downstroke load elevated (' + dnE.toFixed(2) + '). Fluid leaking back through SV during downstroke. (Published: SV leak = downstroke load higher than normal.)';
+                    reason = 'Card area ' + (f.areaRatio * 100).toFixed(0) + '% of ideal. ';
+                    if (f.flatTop > 0.65 && f.flatBottom < 0.40) {
+                        reason += 'Asymmetric: flat upstroke (' + f.flatTop.toFixed(2) + ') but irregular downstroke (' + f.flatBottom.toFixed(2) + '). Possible bent barrel or sticking plunger.';
+                    } else if (f.flatTop > 0.50 && f.flatBottom > 0.40) {
+                        reason += 'Retains rectangular shape but reduced efficiency. Possible worn pump barrel — check for sand production.';
+                    } else {
+                        reason += 'Partial fillage or mechanical issue. Compare with historical cards to determine if progressive (wear) or sudden (bent/stuck).';
+                    }
+                } else if (cid === 'tv_leak') {
+                    reason = 'Upstroke load declining: slope=' + f.upstrokeSlope.toFixed(2) + ', flat top=' + (f.flatTop * 100).toFixed(0) + '%. ';
+                    reason += 'Fluid leaking past traveling valve during upstroke — load falls as plunger rises. ';
+                    reason += '(Published: TV leak = upper corners rounded, load drops progressively.)';
+                } else if (cid === 'sv_leak') {
+                    reason = 'Downstroke load elevated: mid-stroke at ' + (dnE * 100).toFixed(0) + '% of range (normal <15%). ';
+                    reason += 'Fluid leaking back through standing valve during downstroke. ';
+                    reason += '(Published: SV leak = downstroke load higher than normal, bottom corners rounded.)';
                 } else if (cid === 'full_pump') {
-                    reason = 'Rectangular card (area=' + f.areaRatio.toFixed(2) + '). (Published: ideal pump card approaches perfect rectangle.)';
+                    reason = 'Rectangular card: area ' + (f.areaRatio * 100).toFixed(0) + '%, flat top ' + (f.flatTop * 100).toFixed(0) + '%, flat bottom ' + (f.flatBottom * 100).toFixed(0) + '%. ';
+                    reason += 'Load range ' + lr + ' lbs. Pump filling completely each stroke. ';
+                    reason += '(Published: ideal pump card approaches perfect rectangle with vertical transitions.)';
+                } else if (cid === 'rod_part') {
+                    reason = 'Card collapsed to ' + (f.areaRatio * 100).toFixed(0) + '% area with minimal load variation (' + lr + ' lbs). ';
+                    reason += 'Rod string parted — surface carries only weight above break. No pumping action at pump.';
                 }
 
                 results.push({
