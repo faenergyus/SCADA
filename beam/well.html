@@ -387,13 +387,15 @@
         // Majority diagnosis across all loaded cards (temporal stability)
         var majority = getMajorityDiagnosis(cards, rodModel);
 
-        // Card type and state detection
+        // Card type and pump state detection
         var cardType = card.CardType || '?';
+        var master = wellDataGlobal ? (wellDataGlobal.master || wellDataGlobal) : null;
+        var pumpState = detectPumpState(master);
 
         // Per-well baseline comparison
         var baseline = getWellBaseline(cards, idx, rodModel);
 
-        runDiagnostics(diagCard, rodModel, wellCalc, surfData, cards, idx, majority, cardType, dhData, baseline);
+        runDiagnostics(diagCard, rodModel, wellCalc, surfData, cards, idx, majority, cardType, dhData, baseline, pumpState);
 
         // Info below charts
         var infoStr = 'SPM: ' + vf(card.SPM, 1) +
@@ -490,6 +492,42 @@
         };
 
         Plotly.newPlot(el, traces, layout, { responsive: true, displayModeBar: false });
+    }
+
+    /**
+     * Detect pump operational state from well master data.
+     * Returns: 'running', 'starting', 'stopping', 'idle', 'shutdown', 'unknown'
+     */
+    function detectPumpState(master) {
+        if (!master) return { state: 'unknown', label: 'Unknown', detail: '' };
+        var rs = (master.RunStatus || '').toLowerCase();
+        var tis = master.TimeInState; // seconds in current state
+
+        if (rs.includes('shutdown')) {
+            return { state: 'shutdown', label: 'Shutdown', detail: 'Unit shut down' + (tis ? ' for ' + formatDuration(tis) : '') };
+        }
+        if (rs.includes('idle')) {
+            var idleDetail = 'Idle' + (tis ? ' for ' + formatDuration(tis) : '');
+            if (rs.includes('timer')) idleDetail += ' (timer-controlled)';
+            return { state: 'idle', label: 'Idle', detail: idleDetail };
+        }
+        if (rs.includes('stop')) {
+            return { state: 'stopping', label: 'Pump-Off', detail: 'Stopping/pumping off' };
+        }
+        if (rs.includes('run') || rs.includes('pump')) {
+            if (tis != null && tis < 300) {
+                return { state: 'starting', label: 'Startup', detail: 'Running for ' + formatDuration(tis) + ' (startup — card may be abnormal)' };
+            }
+            return { state: 'running', label: 'Running', detail: 'Steady state' + (tis ? ' for ' + formatDuration(tis) : '') };
+        }
+        return { state: 'unknown', label: rs || 'Unknown', detail: '' };
+    }
+
+    function formatDuration(seconds) {
+        if (seconds == null) return '?';
+        if (seconds < 60) return seconds + 's';
+        if (seconds < 3600) return Math.floor(seconds / 60) + 'm';
+        return Math.floor(seconds / 3600) + 'h ' + Math.floor((seconds % 3600) / 60) + 'm';
     }
 
     /**
@@ -673,7 +711,7 @@
         };
     }
 
-    function runDiagnostics(cardData, rodModel, wellCalc, surfData, allCards, cardIdx, majority, cardType, hasXDiagDH, baseline) {
+    function runDiagnostics(cardData, rodModel, wellCalc, surfData, allCards, cardIdx, majority, cardType, hasXDiagDH, baseline, pumpState) {
         var panel = document.getElementById('diagnosisPanel');
         var content = document.getElementById('diagnosisContent');
 
@@ -778,10 +816,16 @@
         var typeMap = { S: 'Scan', N: 'Analysis', P: 'POC', V: 'VFD' };
         var typeName = typeMap[cardType] || cardType || '?';
         var typeColor = hasXDiagDH ? 'text-green-400' : 'text-yellow-400';
-        html += '<div class="flex items-center gap-3 mb-2 text-xs">';
+        html += '<div class="flex flex-wrap items-center gap-3 mb-2 text-xs">';
         html += '<span class="px-2 py-0.5 rounded bg-gray-800 ' + typeColor + '">Card: ' + typeName + ' (' + cardType + ')</span>';
+        if (pumpState && pumpState.state !== 'unknown') {
+            var stateColors = { running: 'text-green-400', starting: 'text-blue-400', stopping: 'text-orange-400', idle: 'text-yellow-400', shutdown: 'text-red-400' };
+            var stateColor = stateColors[pumpState.state] || 'text-gray-400';
+            html += '<span class="px-2 py-0.5 rounded bg-gray-800 ' + stateColor + '">' + escapeHtml(pumpState.label) + '</span>';
+            if (pumpState.detail) html += '<span class="text-gray-500">' + escapeHtml(pumpState.detail) + '</span>';
+        }
         if (!hasXDiagDH) {
-            html += '<span class="text-yellow-500">No XDiag downhole card — diagnosis based on FAE wave equation calc or surface card features. Less reliable.</span>';
+            html += '<span class="text-yellow-500">No XDiag DH card — less reliable diagnosis.</span>';
         }
         html += '</div>';
 
