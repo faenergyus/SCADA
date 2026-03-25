@@ -375,7 +375,7 @@
         // Calculate expected loads from well data
         var wellCalc = null;
         if (rodModel) {
-            wellCalc = calculateExpectedLoads(rodModel, surfData);
+            wellCalc = calculateExpectedLoads(rodModel, surfData, dhData);
         }
 
         // Run diagnostics on the best available downhole card
@@ -487,12 +487,22 @@
      * Fo = fluid load on plunger = fluid_gradient × pump_depth × plunger_area
      * FAP = fluid above pump depth (from actual card loads)
      */
-    function calculateExpectedLoads(rodModel, surfData) {
+    /**
+     * Calculate expected loads and Fo reference lines.
+     *
+     * Fo = fluid load on plunger = fluid_gradient x pump_depth x plunger_area
+     * FAP = estimated fluid above pump (from actual card loads)
+     * Fillage = actual Fo / calculated Fo (independent of XSPOC)
+     *
+     * Sources: McCoy/Rowlan/Podio SWPSC 2015, Echometer TechNotes
+     */
+    function calculateExpectedLoads(rodModel, surfData, dhData) {
         if (!rodModel || !rodModel.pumpDepth) return null;
         var PI = Math.PI;
         var plungerArea = PI * rodModel.plungerDiam * rodModel.plungerDiam / 4;
         var fluidGrad = rodModel.fluidSG * 0.433; // psi/ft
-        var Fo = Math.round(fluidGrad * (rodModel.pumpDepth / 12) * plungerArea);
+        var pumpDepthFt = rodModel.pumpDepth / 12;
+        var Fo = Math.round(fluidGrad * pumpDepthFt * plungerArea);
 
         // Buoyant rod weight
         var buoyWt = 0;
@@ -515,22 +525,60 @@
             actMPRL = Math.min.apply(null, surfData.load);
         }
 
-        // Estimated FAP from actual surface loads
-        var actualFo = (actPPRL && actMPRL) ? actPPRL - actMPRL : 0;
-        var estFAP = (fluidGrad > 0 && plungerArea > 0) ?
-            Math.round(actualFo / (fluidGrad * plungerArea)) : 0;
+        // Actual Fo from surface card (rough: PPRL - MPRL includes dynamics)
+        var actualFoSurf = (actPPRL != null && actMPRL != null) ? actPPRL - actMPRL : 0;
+
+        // Actual Fo from DH card (Echometer method: avg mid-upstroke - avg mid-downstroke)
+        // This is more accurate because it excludes dynamic transients at transitions
+        var actualFoDH = null;
+        var foFillage = null;
+        if (dhData && dhData.position && dhData.load && dhData.load.length > 10) {
+            var N = dhData.load.length;
+            var pos = dhData.position, ld = dhData.load;
+            var topI = 0, botI = 0, topP = -1e9, botP = 1e9;
+            for (var i = 0; i < N; i++) {
+                if (pos[i] > topP) { topP = pos[i]; topI = i; }
+                if (pos[i] < botP) { botP = pos[i]; botI = i; }
+            }
+            // Build upstroke/downstroke index arrays
+            var upI = [], dnI = [];
+            for (var k = 0; k < N; k++) { var i = (botI + k) % N; upI.push(i); if (i === topI) break; }
+            for (var k = 0; k < N; k++) { var i = (topI + k) % N; dnI.push(i); if (i === botI) break; }
+            // Average mid-stroke loads (exclude first/last 25%)
+            function avgMid(arr) {
+                if (arr.length < 8) return 0;
+                var s = Math.floor(arr.length / 4), e = Math.floor(3 * arr.length / 4);
+                var sum = 0, cnt = 0;
+                for (var k = s; k < e; k++) { sum += ld[arr[k]]; cnt++; }
+                return cnt > 0 ? sum / cnt : 0;
+            }
+            var avgUp = avgMid(upI);
+            var avgDn = avgMid(dnI);
+            actualFoDH = Math.round(avgUp - avgDn);
+            foFillage = Fo > 0 ? Math.round(actualFoDH / Fo * 100) : null;
+        }
+
+        // Estimated FAP from actual Fo
+        var estFAP = null;
+        var bestFo = actualFoDH || actualFoSurf;
+        if (bestFo > 0 && fluidGrad > 0 && plungerArea > 0) {
+            estFAP = Math.round(bestFo / (fluidGrad * plungerArea));
+        }
 
         return {
-            Fo: Fo,                   // calculated fluid load (lbs)
-            buoyWt: buoyWt,           // buoyant rod weight (lbs)
-            expPPRL: expPPRL,         // expected peak polished rod load
-            expMPRL: expMPRL,         // expected min polished rod load
-            actPPRL: actPPRL ? Math.round(actPPRL) : null,
-            actMPRL: actMPRL ? Math.round(actMPRL) : null,
-            actualFo: Math.round(actualFo),
-            estFAP: estFAP,           // estimated fluid above pump (ft)
-            plungerArea: plungerArea,
-            fluidGrad: fluidGrad,
+            Fo: Fo,                     // calculated fluid load (lbs)
+            buoyWt: buoyWt,             // buoyant rod weight (lbs)
+            expPPRL: expPPRL,           // expected peak polished rod load
+            expMPRL: expMPRL,           // expected min polished rod load
+            actPPRL: actPPRL != null ? Math.round(actPPRL) : null,
+            actMPRL: actMPRL != null ? Math.round(actMPRL) : null,
+            actualFoSurf: Math.round(actualFoSurf),  // Fo from surface card
+            actualFoDH: actualFoDH,     // Fo from DH card (Echometer method)
+            foFillage: foFillage,       // fillage from Fo ratio (%)
+            estFAP: estFAP,             // estimated fluid above pump (ft)
+            pumpDepthFt: Math.round(pumpDepthFt),
+            plungerArea: Math.round(plungerArea * 1000) / 1000,
+            fluidGrad: Math.round(fluidGrad * 10000) / 10000,
         };
     }
 
@@ -595,19 +643,24 @@
         if (wellCalc) {
             html += '<div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3 text-xs">';
             html += '<div class="bg-gray-800 rounded px-2 py-1.5"><span class="text-gray-500">Calc Fo:</span> <span class="text-fae-gold">' + wellCalc.Fo + ' lbs</span></div>';
-            html += '<div class="bg-gray-800 rounded px-2 py-1.5"><span class="text-gray-500">Actual Fo:</span> <span class="text-gray-200">' + wellCalc.actualFo + ' lbs</span></div>';
-            html += '<div class="bg-gray-800 rounded px-2 py-1.5"><span class="text-gray-500">Est FAP:</span> <span class="text-fae-gold">' + wellCalc.estFAP + ' ft</span></div>';
+            var foSrc = wellCalc.actualFoDH != null ? wellCalc.actualFoDH : wellCalc.actualFoSurf;
+            var foLabel = wellCalc.actualFoDH != null ? 'Actual Fo (DH)' : 'Actual Fo (surf)';
+            html += '<div class="bg-gray-800 rounded px-2 py-1.5"><span class="text-gray-500">' + foLabel + ':</span> <span class="text-gray-200">' + foSrc + ' lbs</span></div>';
+            html += '<div class="bg-gray-800 rounded px-2 py-1.5"><span class="text-gray-500">Est FAP:</span> <span class="text-fae-gold">' + (wellCalc.estFAP || '—') + ' ft</span> <span class="text-gray-600 text-[10px]">/ ' + wellCalc.pumpDepthFt + ' ft depth</span></div>';
             html += '<div class="bg-gray-800 rounded px-2 py-1.5"><span class="text-gray-500">Buoyant Wr:</span> <span class="text-gray-200">' + wellCalc.buoyWt + ' lbs</span></div>';
             html += '<div class="bg-gray-800 rounded px-2 py-1.5"><span class="text-gray-500">Exp PPRL:</span> <span class="text-gray-200">' + wellCalc.expPPRL + ' lbs</span></div>';
             html += '<div class="bg-gray-800 rounded px-2 py-1.5"><span class="text-gray-500">Act PPRL:</span> <span class="text-gray-200">' + (wellCalc.actPPRL || '—') + ' lbs</span></div>';
             html += '<div class="bg-gray-800 rounded px-2 py-1.5"><span class="text-gray-500">Exp MPRL:</span> <span class="text-gray-200">' + wellCalc.expMPRL + ' lbs</span></div>';
             html += '<div class="bg-gray-800 rounded px-2 py-1.5"><span class="text-gray-500">Act MPRL:</span> <span class="text-gray-200">' + (wellCalc.actMPRL || '—') + ' lbs</span></div>';
-            // Estimated fillage from Fo
-            var estFillage = wellCalc.Fo > 0 ? Math.round(wellCalc.actualFo / wellCalc.Fo * 100) : null;
-            if (estFillage !== null) {
-                html += '<div class="bg-gray-800 rounded px-2 py-1.5 col-span-2"><span class="text-gray-500">Est Fillage (from Fo):</span> <span class="' +
-                    (estFillage > 90 ? 'text-green-400' : estFillage > 60 ? 'text-yellow-400' : 'text-red-400') +
-                    '">' + estFillage + '%</span></div>';
+            // Fillage from Fo ratio (DH-based if available, else surface-based)
+            var estFillage = wellCalc.foFillage;
+            if (estFillage == null && wellCalc.Fo > 0 && wellCalc.actualFoSurf > 0) {
+                estFillage = Math.round(wellCalc.actualFoSurf / wellCalc.Fo * 100);
+            }
+            if (estFillage != null) {
+                var fillColor = estFillage > 90 ? 'text-green-400' : estFillage > 60 ? 'text-yellow-400' : 'text-red-400';
+                html += '<div class="bg-gray-800 rounded px-2 py-1.5 col-span-2"><span class="text-gray-500">FAE Est Fillage:</span> <span class="' + fillColor + '">' + estFillage + '%</span>';
+                html += ' <span class="text-gray-600 text-[10px]">(Fo ratio: actual/calc)</span></div>';
             }
             html += '</div>';
         }
