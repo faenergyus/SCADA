@@ -6,8 +6,8 @@
     <title>Well Detail — Forty Acres Rod Status</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-    <script src="js/wave-equation.js?v=10"></script>
-    <script src="js/card-patterns.js?v=10"></script>
+    <script src="js/wave-equation.js?v=11"></script>
+    <script src="js/card-patterns.js?v=11"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -389,11 +389,11 @@
 
         // Card type and state detection
         var cardType = card.CardType || '?';
-        var isAnalysis = (cardType === 'N');  // N = Analysis (has XDiag DH)
-        var isScan = (cardType === 'S');      // S = Scan (raw, no XDiag)
-        var isPOC = (cardType === 'P');       // P = POC controller card
 
-        runDiagnostics(diagCard, rodModel, wellCalc, surfData, cards, idx, majority, cardType, dhData);
+        // Per-well baseline comparison
+        var baseline = getWellBaseline(cards, idx, rodModel);
+
+        runDiagnostics(diagCard, rodModel, wellCalc, surfData, cards, idx, majority, cardType, dhData, baseline);
 
         // Info below charts
         var infoStr = 'SPM: ' + vf(card.SPM, 1) +
@@ -521,6 +521,64 @@
     }
 
     /**
+     * Compute per-well baseline from loaded cards.
+     * Compares current card's features to the well's own average.
+     * Returns deviation score: 0 = identical to baseline, >2 = significant change.
+     */
+    function getWellBaseline(allCards, currentIdx, rodModel) {
+        if (!allCards || allCards.length < 2) return null;
+        // Extract features from all cards with XDiag DH data
+        var allFeatures = [];
+        for (var c = 0; c < allCards.length; c++) {
+            var dh = allCards[c].DownholeCardB || allCards[c].DownholeCard || null;
+            if (!dh || !dh.position || dh.position.length < 10) continue;
+            var f = CardPatterns.extractFeatures(dh.position, dh.load, rodModel);
+            if (f && !f.error) allFeatures.push({ idx: c, f: f });
+        }
+        if (allFeatures.length < 2) return null;
+
+        // Compute mean and std of key features across all cards
+        var keys = ['areaRatio', 'flatTop', 'flatBottom', 'fluidPoundIdx', 'cdSharpness', 'abSharpness'];
+        var means = {}, stds = {};
+        for (var ki = 0; ki < keys.length; ki++) {
+            var k = keys[ki];
+            var vals = allFeatures.map(function(x) { return x.f[k]; }).filter(function(v) { return v != null && !isNaN(v); });
+            if (vals.length < 2) continue;
+            var m = vals.reduce(function(a, b) { return a + b; }, 0) / vals.length;
+            var s = Math.sqrt(vals.reduce(function(a, b) { return a + (b - m) * (b - m); }, 0) / vals.length);
+            means[k] = m;
+            stds[k] = Math.max(s, 0.01);
+        }
+
+        // Find current card's features
+        var currentFeats = null;
+        for (var i = 0; i < allFeatures.length; i++) {
+            if (allFeatures[i].idx === currentIdx) { currentFeats = allFeatures[i].f; break; }
+        }
+        if (!currentFeats) return null;
+
+        // Compute deviation score (normalized Euclidean distance from baseline)
+        var devSum = 0, devCount = 0;
+        var devDetails = {};
+        for (var ki = 0; ki < keys.length; ki++) {
+            var k = keys[ki];
+            if (means[k] === undefined || currentFeats[k] == null) continue;
+            var zScore = (currentFeats[k] - means[k]) / stds[k];
+            devSum += zScore * zScore;
+            devCount++;
+            devDetails[k] = { mean: Math.round(means[k] * 1000) / 1000, z: Math.round(zScore * 100) / 100 };
+        }
+
+        var deviation = devCount > 0 ? Math.sqrt(devSum / devCount) : 0;
+        return {
+            deviation: Math.round(deviation * 100) / 100,
+            isOutlier: deviation > 2.0,
+            details: devDetails,
+            nCards: allFeatures.length,
+        };
+    }
+
+    /**
      * Calculate expected loads and Fo reference lines.
      *
      * Fo = fluid load on plunger = fluid_gradient x pump_depth x plunger_area
@@ -615,7 +673,7 @@
         };
     }
 
-    function runDiagnostics(cardData, rodModel, wellCalc, surfData, allCards, cardIdx, majority, cardType, hasXDiagDH) {
+    function runDiagnostics(cardData, rodModel, wellCalc, surfData, allCards, cardIdx, majority, cardType, hasXDiagDH, baseline) {
         var panel = document.getElementById('diagnosisPanel');
         var content = document.getElementById('diagnosisContent');
 
@@ -726,6 +784,20 @@
             html += '<span class="text-yellow-500">No XDiag downhole card — diagnosis based on FAE wave equation calc or surface card features. Less reliable.</span>';
         }
         html += '</div>';
+
+        // ── Per-well baseline deviation ──
+        if (baseline && baseline.nCards >= 3) {
+            var devColor = baseline.deviation < 1 ? 'text-green-400' : baseline.deviation < 2 ? 'text-yellow-400' : 'text-red-400';
+            html += '<div class="flex items-center gap-3 mb-2 text-xs">';
+            html += '<span class="text-gray-500">vs Well Baseline (' + baseline.nCards + ' cards):</span>';
+            html += '<span class="' + devColor + '">Deviation: ' + baseline.deviation + '</span>';
+            if (baseline.isOutlier) {
+                html += '<span class="text-red-400 font-semibold">OUTLIER — this card differs significantly from this well\'s recent pattern</span>';
+            } else if (baseline.deviation < 0.5) {
+                html += '<span class="text-green-400">Consistent with recent pattern</span>';
+            }
+            html += '</div>';
+        }
 
         // ── Sanity check warning ──
         if (sanityNote) {
