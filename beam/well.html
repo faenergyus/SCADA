@@ -91,6 +91,15 @@
                 <span class="text-sm text-gray-400">Card:</span>
                 <div id="cardNav" class="flex flex-wrap gap-2"></div>
             </div>
+
+            <!-- FAE Card Diagnosis (above cards for immediate visibility) -->
+            <div id="diagnosisPanel" class="mb-4 hidden">
+                <div class="info-card">
+                    <div class="text-fae-gold font-semibold mb-3">FAE Card Diagnosis</div>
+                    <div id="diagnosisContent"></div>
+                </div>
+            </div>
+
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div class="info-card">
                     <div class="text-sm text-gray-400 mb-2">Surface Card</div>
@@ -102,14 +111,6 @@
                 </div>
             </div>
             <div class="mt-3 text-sm text-gray-400" id="cardInfo"></div>
-
-            <!-- FAE Card Diagnosis -->
-            <div id="diagnosisPanel" class="mt-4 hidden">
-                <div class="info-card">
-                    <div class="text-fae-gold font-semibold mb-3">FAE Card Diagnosis</div>
-                    <div id="diagnosisContent"></div>
-                </div>
-            </div>
         </div>
 
         <!-- Tab: Analysis -->
