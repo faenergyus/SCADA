@@ -6,8 +6,8 @@
     <title>Well Detail — Forty Acres Rod Status</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-    <script src="js/wave-equation.js?v=20"></script>
-    <script src="js/card-patterns.js?v=20"></script>
+    <script src="js/wave-equation.js?v=21"></script>
+    <script src="js/card-patterns.js?v=21"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -935,6 +935,31 @@
                 html += '<span class="text-yellow-500 text-xs">&larr; current card disagrees with trend</span>';
             }
             html += '</div>';
+        }
+
+        // ── Fillage trend across loaded cards ──
+        var fillages = [];
+        for (var ci = 0; ci < allCards.length; ci++) {
+            if (allCards[ci].Fillage != null && allCards[ci].Fillage > 0) {
+                fillages.push({ idx: ci, fill: allCards[ci].Fillage, type: allCards[ci].CardType || '?' });
+            }
+        }
+        if (fillages.length >= 2) {
+            // Only use N-type cards for fillage trend (S-type fillage is unreliable)
+            var nFills = fillages.filter(function(f) { return f.type === 'N'; });
+            if (nFills.length >= 2) {
+                var first = nFills[nFills.length - 1].fill;  // oldest
+                var last = nFills[0].fill;  // newest
+                var diff = last - first;
+                var trendIcon = diff > 5 ? '↑' : diff < -5 ? '↓' : '→';
+                var trendColor = diff > 5 ? 'text-green-400' : diff < -5 ? 'text-red-400' : 'text-gray-400';
+                var trendLabel = diff > 5 ? 'Improving' : diff < -5 ? 'Declining' : 'Stable';
+                html += '<div class="flex items-center gap-3 mb-2 text-xs">';
+                html += '<span class="text-gray-500">Fillage Trend (' + nFills.length + ' N-cards):</span>';
+                html += '<span class="' + trendColor + ' font-semibold">' + trendIcon + ' ' + trendLabel + '</span>';
+                html += '<span class="text-gray-500">' + first.toFixed(0) + '% → ' + last.toFixed(0) + '%</span>';
+                html += '</div>';
+            }
         }
 
         // ── Per-well baseline deviation ──

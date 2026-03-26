@@ -1149,14 +1149,23 @@ const CardPatterns = (function () {
             });
         }
 
-        // Possible SV leak: elevated downstroke load mid-stroke
-        // (Published: SV leak = downstroke load higher than normal)
-        if (!existingIds['sv_leak'] && dnE > 0.18 && f.downstrokeSlope > 0.08) {
-            secondaries.push({
-                id: 'sv_leak',
-                reason: 'Possible SV leak: downstroke load elevated (' + (dnE * 100).toFixed(0) + '% of range), rising bottom (slope=' + f.downstrokeSlope.toFixed(2) + ').',
-                conf: 0.10 + dnE * 0.4,
-            });
+        // Possible SV leak: late downstroke load RISES (fluid leaking back through SV)
+        // Published: SV leak = downstroke load higher than normal, rising in late portion
+        // Key signature: earlyDnLoad is LOW but load increases toward end of downstroke
+        if (!existingIds['sv_leak']) {
+            var svEvidence = '';
+            var svConf = 0;
+            // Check for rising downstroke (late > early in absolute terms)
+            if (f.downstrokeSlope > 0.08 && f.earlyDnLoad < 0.35) {
+                svConf = 0.25 + f.downstrokeSlope * 0.5;
+                svEvidence = 'Possible SV leak: downstroke load rising (slope=' + f.downstrokeSlope.toFixed(2) + '), low early DN load (' + (f.earlyDnLoad * 100).toFixed(0) + '%). Fluid may be leaking back through standing valve.';
+            } else if (dnE > 0.20 && f.downstrokeSlope > 0.05) {
+                svConf = 0.10 + dnE * 0.3;
+                svEvidence = 'Possible SV leak: downstroke load elevated (' + (dnE * 100).toFixed(0) + '% of range), slight rising trend.';
+            }
+            if (svConf > 0.10) {
+                secondaries.push({ id: 'sv_leak', reason: svEvidence, conf: svConf });
+            }
         }
 
         // Possible TV leak: declining upstroke load
