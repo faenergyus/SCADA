@@ -707,6 +707,99 @@ const CardPatterns = (function () {
         };
     }
 
+    /**
+     * Extract features from SURFACE card for S-type card diagnosis.
+     * Surface cards are always available and reliable. Uses different
+     * feature set than downhole cards — surface card shapes encode pump
+     * condition through rod string dynamics.
+     *
+     * Returns L1 class estimate with confidence, or null if can't determine.
+     */
+    function diagnoseSurfaceCard(position, load) {
+        if (!position || !load || position.length < 10) return null;
+        var N = Math.min(position.length, load.length);
+
+        var minL = Infinity, maxL = -Infinity, minP = Infinity, maxP = -Infinity;
+        for (var i = 0; i < N; i++) {
+            if (load[i] < minL) minL = load[i];
+            if (load[i] > maxL) maxL = load[i];
+            if (position[i] < minP) minP = position[i];
+            if (position[i] > maxP) maxP = position[i];
+        }
+        var lr = maxL - minL, pr = maxP - minP;
+        if (lr < 1 || pr < 0.1) return null;
+
+        var nP = [], nL = [];
+        for (var i = 0; i < N; i++) {
+            nP.push((position[i] - minP) / pr);
+            nL.push((load[i] - minL) / lr);
+        }
+
+        // Area
+        var area = 0;
+        for (var i = 0; i < N; i++) {
+            var j = (i + 1) % N;
+            area += nP[i] * nL[j] - nP[j] * nL[i];
+        }
+        area = Math.abs(area) / 2;
+
+        // Find stroke top/bottom
+        var topI = 0, botI = 0;
+        for (var i = 1; i < N; i++) {
+            if (nP[i] > nP[topI]) topI = i;
+            if (nP[i] < nP[botI]) botI = i;
+        }
+        var upI = [], dnI = [];
+        for (var k = 0; k < N; k++) {
+            var idx = (botI + k) % N;
+            upI.push(idx);
+            if (idx === topI) break;
+        }
+        for (var k = 0; k < N; k++) {
+            var idx = (topI + k) % N;
+            dnI.push(idx);
+            if (idx === botI) break;
+        }
+
+        // Mid-upstroke slope
+        var upSlope = 0;
+        if (upI.length > 6) {
+            var s = Math.floor(upI.length / 4), e = Math.floor(3 * upI.length / 4);
+            upSlope = calcSlope(nP, nL, upI.slice(s, e));
+        }
+
+        // Mean load level
+        var meanLoad = 0;
+        for (var i = 0; i < N; i++) meanLoad += nL[i];
+        meanLoad /= N;
+
+        // Simple surface card classification based on empirical separations:
+        // under_filled: area < 0.46, upSlope > 0 (rising upstroke)
+        // full_pump: area ~0.50, upSlope < 0 (declining upstroke)
+        // sv_leak: area > 0.52, meanLoad < 0.44
+        // pump_issue: area > 0.48, widthVar high
+        var result = { condition: 'unknown', confidence: 0.25, evidence: '' };
+
+        if (area < 0.42 && upSlope > 0.05) {
+            result = { condition: 'under_filled', confidence: 0.55,
+                evidence: 'Surface card: small area (' + (area * 100).toFixed(0) + '%), rising upstroke (slope=' + upSlope.toFixed(2) + '). Pump not filling completely.' };
+        } else if (area > 0.47 && upSlope < -0.10 && meanLoad > 0.46) {
+            result = { condition: 'full_pump', confidence: 0.50,
+                evidence: 'Surface card: large area (' + (area * 100).toFixed(0) + '%), declining upstroke (slope=' + upSlope.toFixed(2) + '). Consistent with full pump.' };
+        } else if (area > 0.52 && meanLoad < 0.44) {
+            result = { condition: 'sv_leak', confidence: 0.40,
+                evidence: 'Surface card: large area (' + (area * 100).toFixed(0) + '%), low mean load (' + (meanLoad * 100).toFixed(0) + '%). Possible SV leak.' };
+        } else if (area > 0.46) {
+            result = { condition: 'pump_issue', confidence: 0.35,
+                evidence: 'Surface card: area ' + (area * 100).toFixed(0) + '%, upSlope=' + upSlope.toFixed(2) + '. Possible mechanical issue or incomplete fillage.' };
+        } else {
+            result = { condition: 'under_filled', confidence: 0.30,
+                evidence: 'Surface card: reduced area (' + (area * 100).toFixed(0) + '%). Pump likely not filling completely.' };
+        }
+
+        return result;
+    }
+
     function calcSlope(xArr, yArr, indices) {
         if (indices.length < 3) return 0;
         var sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
@@ -1145,5 +1238,6 @@ const CardPatterns = (function () {
         extractFeatures: extractFeatures,
         diagnose: diagnose,
         analyzeCard: analyzeCard,
+        diagnoseSurfaceCard: diagnoseSurfaceCard,
     };
 })();

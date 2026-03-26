@@ -6,8 +6,8 @@
     <title>Well Detail — Forty Acres Rod Status</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-    <script src="js/wave-equation.js?v=17"></script>
-    <script src="js/card-patterns.js?v=17"></script>
+    <script src="js/wave-equation.js?v=18"></script>
+    <script src="js/card-patterns.js?v=18"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -384,6 +384,12 @@
         // Fall back to FAE Calc (transfer matrix) if no XDiag available.
         var diagCard = dhData || faeCard;
 
+        // Surface card fallback diagnosis (for S-type cards without XDiag)
+        var surfDiag = null;
+        if (!dhData && surfData && surfData.position) {
+            surfDiag = CardPatterns.diagnoseSurfaceCard(surfData.position, surfData.load);
+        }
+
         // Majority diagnosis across all loaded cards (temporal stability)
         var majority = getMajorityDiagnosis(cards, rodModel);
 
@@ -395,7 +401,7 @@
         // Per-well baseline comparison
         var baseline = getWellBaseline(cards, idx, rodModel);
 
-        runDiagnostics(diagCard, rodModel, wellCalc, surfData, cards, idx, majority, cardType, dhData, baseline, pumpState);
+        runDiagnostics(diagCard, rodModel, wellCalc, surfData, cards, idx, majority, cardType, dhData, baseline, pumpState, surfDiag);
 
         // Info below charts
         var infoStr = 'SPM: ' + vf(card.SPM, 1) +
@@ -711,7 +717,7 @@
         };
     }
 
-    function runDiagnostics(cardData, rodModel, wellCalc, surfData, allCards, cardIdx, majority, cardType, hasXDiagDH, baseline, pumpState) {
+    function runDiagnostics(cardData, rodModel, wellCalc, surfData, allCards, cardIdx, majority, cardType, hasXDiagDH, baseline, pumpState, surfDiag) {
         var panel = document.getElementById('diagnosisPanel');
         var content = document.getElementById('diagnosisContent');
 
@@ -781,7 +787,7 @@
             if (pumpState.detail) html += '<span class="text-gray-500">' + escapeHtml(pumpState.detail) + '</span>';
         }
         if (!hasXDiagDH) {
-            html += '<span class="text-yellow-500">No XDiag DH card — less reliable diagnosis.</span>';
+            html += '<span class="text-yellow-500">No XDiag DH card — using surface card analysis.</span>';
         }
         html += '</div>';
 
@@ -790,6 +796,33 @@
             html += '<div class="border rounded-lg p-3 mb-3 bg-blue-900/30 text-blue-300 border-blue-700">';
             html += '<strong>Surface Card Check:</strong> ' + escapeHtml(sanityNote);
             html += '</div>';
+        }
+
+        // ── Surface card diagnosis (when no XDiag DH) ──
+        if (surfDiag && surfDiag.condition !== 'unknown') {
+            html += '<div class="border rounded-lg p-2 mb-3 bg-gray-800/50 text-gray-300 border-gray-600">';
+            html += '<strong class="text-fae-gold text-sm">Surface Card Analysis:</strong> ';
+            html += '<span class="text-sm">' + escapeHtml(surfDiag.evidence) + '</span>';
+            html += '</div>';
+
+            // If the surface card diagnosis disagrees with the DH-based diagnosis,
+            // and confidence is higher, prefer the surface card result
+            if (result.primary && surfDiag.confidence > result.primary.confidence) {
+                var surfPattern = null;
+                for (var sp = 0; sp < CardPatterns.PATTERNS.length; sp++) {
+                    if (CardPatterns.PATTERNS[sp].id === surfDiag.condition) {
+                        surfPattern = CardPatterns.PATTERNS[sp]; break;
+                    }
+                }
+                if (surfPattern) {
+                    result.primary = {
+                        pattern: surfPattern,
+                        confidence: surfDiag.confidence,
+                        physicsRule: surfDiag.evidence,
+                        matchDetails: {},
+                    };
+                }
+            }
         }
 
         // Primary diagnosis
