@@ -862,14 +862,18 @@ const CardPatterns = (function () {
         worn_pump:          { mean: [0.730, 0.754, 0.591, 0.202, 0.705, 0.718, 0.610, 0.527, 0.107, 0.852, 0.241, -0.243, 0.466], std: [0.140, 0.203, 0.121, 0.082, 0.397, 0.546, 0.422, 0.377, 0.055, 0.250, 0.232, 0.106, 0.216], n: 141, group: 'pump_issue' },
         bent_barrel:        { mean: [0.768, 0.739, 0.527, 0.212, 0.732, 0.930, 0.430, 0.667, 0.126, 0.918, 0.136, -0.091, 0.274], std: [0.033, 0.125, 0.183, 0.050, 0.253, 0.189, 0.370, 0.263, 0.033, 0.097, 0.132, 0.091, 0.114], n: 458, group: 'pump_issue' },
     };
-    // L1 broad-class centroids (13-feature vectors, retrained 2026-03-26)
+    // L1 broad-class centroids — SNAPSHOT (single latest card per well, 44 wells)
+    // These are tighter than the 6K-card temporal centroids because they represent
+    // what the classifier actually sees at runtime (one card at a time), not the
+    // blurred average across days of shifting XSPOC classifications.
+    // Retrained 2026-03-26.
     var CENTROIDS = {
-        full_pump:    { mean: [0.833, 0.757, 0.697, 0.173, 0.459, 0.998, 0.656, 0.780, 0.070, 0.921, 0.164, -0.177, 0.391], std: [0.043, 0.090, 0.103, 0.045, 2.162, 0.027, 0.322, 0.200, 0.038, 0.173, 0.079, 0.078, 0.173], n: 1268 },
-        pump_issue:   { mean: [0.773, 0.717, 0.554, 0.188, 0.239, 0.924, 0.581, 0.643, 0.128, 0.728, 0.206, -0.230, 0.568], std: [0.071, 0.153, 0.133, 0.062, 1.304, 0.201, 0.316, 0.256, 0.044, 0.344, 0.113, 0.105, 0.203], n: 2633 },
-        rod_part:     { mean: [0.319, 0.328, 0.501, 0.155, -0.271, -0.137, 0.036, -0.016, 0.357, 0.379, 0.673, -0.174, 0.514], std: [0.045, 0.255, 0.054, 0.002, 0.360, 0.246, 0.069, 0.027, 0.194, 0.142, 0.290, 0.103, 0.424], n: 2 },
-        sv_leak:      { mean: [0.768, 0.617, 0.528, 0.126, 0.449, 0.493, 0.402, 0.258, 0.093, 0.729, 0.112, -0.196, 0.267], std: [0.081, 0.195, 0.092, 0.091, 0.441, 0.526, 0.449, 0.292, 0.038, 0.219, 0.161, 0.053, 0.168], n: 324 },
-        tv_leak:      { mean: [0.809, 0.631, 0.674, 0.169, 0.668, 0.961, 0.493, 0.333, 0.065, 0.790, 0.094, -0.143, 0.225], std: [0.070, 0.121, 0.169, 0.079, 0.411, 0.149, 0.404, 0.165, 0.038, 0.180, 0.092, 0.087, 0.139], n: 31 },
-        under_filled: { mean: [0.643, 0.666, 0.486, 0.206, 0.392, 0.782, 0.250, 0.503, 0.210, 0.627, 0.301, -0.271, 0.731], std: [0.121, 0.246, 0.146, 0.073, 0.467, 0.316, 0.246, 0.346, 0.150, 0.354, 0.123, 0.155, 0.173], n: 1635 },
+        full_pump:    { mean: [0.832, 0.772, 0.692, 0.150, 0.309, 1.000, 0.873, 0.730, 0.070, 0.977, 0.168, -0.213, 0.445], std: [0.040, 0.052, 0.087, 0.029, 1.692, 0.001, 0.153, 0.179, 0.042, 0.033, 0.068, 0.076, 0.180], n: 7 },
+        pump_issue:   { mean: [0.749, 0.528, 0.591, 0.194, 0.588, 0.793, 0.462, 0.656, 0.104, 0.625, 0.156, -0.179, 0.429], std: [0.072, 0.232, 0.179, 0.065, 0.763, 0.356, 0.332, 0.302, 0.054, 0.312, 0.116, 0.097, 0.208], n: 11 },
+        rod_part:     { mean: [0.314, 0.103, 0.086, 0.060, -0.827, -0.797, -0.073, -0.045, 0.788, 0.247, 0.933, 0.142, 0.940], std: [0.150, 0.150, 0.150, 0.150, 0.150, 0.150, 0.150, 0.150, 0.150, 0.150, 0.150, 0.150, 0.150], n: 1 },
+        sv_leak:      { mean: [0.804, 0.715, 0.487, 0.177, 0.546, 0.548, 0.526, 0.181, 0.091, 0.777, 0.048, -0.210, 0.236], std: [0.011, 0.240, 0.038, 0.131, 0.454, 0.452, 0.474, 0.092, 0.026, 0.223, 0.038, 0.023, 0.097], n: 2 },
+        tv_leak:      { mean: [0.690, 0.484, 0.632, 0.126, 0.429, 0.607, 0.098, 0.255, 0.141, 0.589, 0.088, -0.096, 0.174], std: [0.164, 0.142, 0.417, 0.097, 0.486, 0.482, 0.172, 0.208, 0.129, 0.268, 0.105, 0.089, 0.120], n: 5 },
+        under_filled: { mean: [0.610, 0.635, 0.446, 0.221, 0.326, 0.638, 0.299, 0.355, 0.264, 0.669, 0.331, -0.193, 0.675], std: [0.185, 0.259, 0.198, 0.100, 0.435, 0.426, 0.358, 0.296, 0.193, 0.352, 0.176, 0.196, 0.236], n: 18 },
     };
 
     /**
@@ -956,6 +960,39 @@ const CardPatterns = (function () {
             override = {
                 id: 'gas_lock', confidence: 0.90,
                 reason: 'Card collapsed to ' + ar.toFixed(2) + ' area. Neither valve can open — gas compresses and expands without transferring fluid. (Published: gas lock = tiny ellipse.)'
+            };
+        }
+
+        // Override C: Full pump — rectangular card with sharp transitions
+        // Published (Echometer, EngineerFix): "ideal pump card approaches perfect
+        // rectangle." Sharp C-D (cd > 0.70) + flat top (ft > 0.70) + late upstroke
+        // drop (upD > 0.90) = pump filling completely each stroke.
+        // Data: full pump wells have cd=0.87, ft=0.77, upD=0.98 (snapshot centroids)
+        var upD = f.upDropPt || 1.0;
+        if (!override && ar > 0.78 && ft > 0.68 && cd > 0.65 && upD > 0.88) {
+            override = {
+                id: 'full_pump', confidence: 0.85,
+                reason: 'Rectangular card: area ' + (ar * 100).toFixed(0) + '%, flat top ' +
+                    (ft * 100).toFixed(0) + '%, sharp C-D (' + cd.toFixed(2) +
+                    '), load held until ' + (upD * 100).toFixed(0) + '% of upstroke. ' +
+                    '(Published: ideal pump card approaches perfect rectangle with vertical transitions.)'
+            };
+        }
+
+        // Override D: TV leak — rounded corners + DECLINING upstroke load
+        // Published: "TV leak = upper corners rounded off, load falls during upstroke"
+        // Key distinction from gas interference: TV leak has DECLINING upstroke
+        // (fluid escaping through TV) while gas interference has flat/rising upstroke.
+        // Data: TV leak upD=0.59 (load drops early), gas/FP upD=0.67 (load held longer)
+        // Also: TV leak has higher flatBottom (0.63) — downstroke is relatively normal.
+        if (!override && cd < 0.15 && ab < 0.30 && ft < 0.52 && ar > 0.50 && upD < 0.65 && fb > 0.40) {
+            override = {
+                id: 'tv_leak', confidence: 0.75,
+                reason: 'Both upper corners rounded: C-D=' + cd.toFixed(2) +
+                    ', A-B=' + ab.toFixed(2) + '. Load drops at ' + (upD * 100).toFixed(0) +
+                    '% of upstroke (early decline = TV leak). Flat bottom=' + (fb * 100).toFixed(0) +
+                    '% (normal downstroke). ' +
+                    '(Published: TV leak = upper corners rounded, load falls during upstroke.)'
             };
         }
 
