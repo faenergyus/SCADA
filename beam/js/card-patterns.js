@@ -1168,14 +1168,32 @@ const CardPatterns = (function () {
             }
         }
 
-        // Possible TV leak: declining upstroke load
-        // (Published: TV leak = upper corners rounded, load falls during upstroke)
-        if (!existingIds['tv_leak'] && f.upstrokeSlope < -0.12 && f.flatTop < 0.55) {
-            secondaries.push({
-                id: 'tv_leak',
-                reason: 'Possible TV leak: upstroke load declining (slope=' + f.upstrokeSlope.toFixed(2) + '), flat top only ' + (f.flatTop * 100).toFixed(0) + '%.',
-                conf: 0.10 + Math.abs(f.upstrokeSlope) * 0.5,
-            });
+        // Possible TV leak: declining upstroke load OR high upstroke convexity
+        // (Published: TV leak = upper corners rounded, load falls during upstroke.
+        //  Upstroke convexity = load peaks mid-stroke then falls = fluid escaping past TV.)
+        // Data: TV leak upConvexity=0.27 vs others=0.07 (strong signal)
+        if (!existingIds['tv_leak']) {
+            var tvConf = 0;
+            var tvReason = '';
+            // Check upstroke slope (traditional)
+            if (f.upstrokeSlope < -0.12 && f.flatTop < 0.55) {
+                tvConf = 0.15 + Math.abs(f.upstrokeSlope) * 0.4;
+                tvReason = 'Upstroke load declining (slope=' + f.upstrokeSlope.toFixed(2) + '), flat top only ' + (f.flatTop * 100).toFixed(0) + '%. ';
+            }
+            // Check downstroke slope (TV leak wells show steeper negative dnSlope)
+            if (f.downstrokeSlope < -0.15) {
+                tvConf = Math.max(tvConf, 0.12 + Math.abs(f.downstrokeSlope) * 0.3);
+                tvReason += 'Downstroke load falling steeply (slope=' + f.downstrokeSlope.toFixed(2) + '). ';
+            }
+            // Check early downstroke load (TV leak = very low earlyDn, data shows 0.23)
+            if (f.earlyDnLoad < 0.28 && f.earlyDnLoad > 0) {
+                tvConf = Math.max(tvConf, 0.15);
+                tvReason += 'Low early downstroke load (' + (f.earlyDnLoad * 100).toFixed(0) + '%). ';
+            }
+            if (tvConf > 0.10) {
+                tvReason += '(Published: TV leak = fluid leaks past traveling valve during upstroke, upper corners rounded.)';
+                secondaries.push({ id: 'tv_leak', reason: 'Possible TV leak: ' + tvReason, conf: tvConf });
+            }
         }
 
         // Worn pump barrel: reduced area but retains rectangular shape

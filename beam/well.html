@@ -6,8 +6,8 @@
     <title>Well Detail — Forty Acres Rod Status</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-    <script src="js/wave-equation.js?v=21"></script>
-    <script src="js/card-patterns.js?v=21"></script>
+    <script src="js/wave-equation.js?v=22"></script>
+    <script src="js/card-patterns.js?v=22"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -407,7 +407,8 @@
         // Per-well baseline comparison
         var baseline = getWellBaseline(cards, idx, rodModel);
 
-        runDiagnostics(diagCard, rodModel, wellCalc, surfData, cards, idx, majority, cardType, dhData, baseline, pumpState, surfDiag);
+        var cardFillage = card.Fillage;  // XSPOC-computed fillage (reliable on N-type)
+        runDiagnostics(diagCard, rodModel, wellCalc, surfData, cards, idx, majority, cardType, dhData, baseline, pumpState, surfDiag, cardFillage);
 
         // Info below charts
         var infoStr = 'SPM: ' + vf(card.SPM, 1) +
@@ -723,7 +724,7 @@
         };
     }
 
-    function runDiagnostics(cardData, rodModel, wellCalc, surfData, allCards, cardIdx, majority, cardType, hasXDiagDH, baseline, pumpState, surfDiag) {
+    function runDiagnostics(cardData, rodModel, wellCalc, surfData, allCards, cardIdx, majority, cardType, hasXDiagDH, baseline, pumpState, surfDiag, cardFillage) {
         var panel = document.getElementById('diagnosisPanel');
         var content = document.getElementById('diagnosisContent');
 
@@ -755,6 +756,43 @@
         if (!result || !result.primary) {
             panel.classList.add('hidden');
             return;
+        }
+
+        // ── Fillage sanity check ──
+        // If XSPOC reports fillage > 90% on an N-type card, the pump IS filling.
+        // The condition cannot be "under_filled" or "incomplete_fillage" — it must
+        // be a valve or mechanical issue at full fill (SV leak, TV leak, worn pump, etc.)
+        var fillageNote = '';
+        if (cardFillage != null && cardFillage > 90 && cardType === 'N' && result.primary) {
+            var pid = result.primary.pattern.id;
+            if (pid === 'under_filled' || pid === 'incomplete_fillage') {
+                fillageNote = 'Fillage is ' + Math.round(cardFillage) + '% — pump IS filling. ' +
+                    'Card shape deviations indicate a valve or mechanical issue, not incomplete fillage. ' +
+                    'Look for SV leak, TV leak, worn pump, or bent barrel.';
+                // Try to find a better match from secondary/compound conditions
+                var betterMatch = null;
+                if (result.allMatches) {
+                    for (var mi = 1; mi < result.allMatches.length; mi++) {
+                        var mid = result.allMatches[mi].pattern.id;
+                        if (mid !== 'under_filled' && mid !== 'incomplete_fillage' && mid !== 'rod_part') {
+                            betterMatch = result.allMatches[mi]; break;
+                        }
+                    }
+                }
+                if (betterMatch) {
+                    result.primary = betterMatch;
+                } else {
+                    // Default to pump_issue
+                    for (var p = 0; p < CardPatterns.PATTERNS.length; p++) {
+                        if (CardPatterns.PATTERNS[p].id === 'pump_issue') {
+                            result.primary = { pattern: CardPatterns.PATTERNS[p], confidence: 0.45,
+                                physicsRule: 'Fillage ' + Math.round(cardFillage) + '% but card shape is not rectangular. Possible valve or mechanical issue.',
+                                matchDetails: {} };
+                            break;
+                        }
+                    }
+                }
+            }
         }
 
         // ── Surface card sanity check ──
@@ -820,6 +858,11 @@
         if (sanityNote) {
             html += '<div class="border rounded-lg p-3 mb-3 bg-blue-900/30 text-blue-300 border-blue-700">';
             html += '<strong>Surface Card Check:</strong> ' + escapeHtml(sanityNote);
+            html += '</div>';
+        }
+        if (fillageNote) {
+            html += '<div class="border rounded-lg p-3 mb-3 bg-purple-900/30 text-purple-300 border-purple-700">';
+            html += '<strong>Fillage Check:</strong> ' + escapeHtml(fillageNote);
             html += '</div>';
         }
 
