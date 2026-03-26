@@ -6,8 +6,8 @@
     <title>Well Detail — Forty Acres Rod Status</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-    <script src="js/wave-equation.js?v=25"></script>
-    <script src="js/card-patterns.js?v=25"></script>
+    <script src="js/wave-equation.js?v=26"></script>
+    <script src="js/card-patterns.js?v=26"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -346,26 +346,41 @@
         var dhData = card.DownholeCardB || card.DownholeCard || null;
         var pocData = card.POCDownholeCardB || null;
 
-        // Try FAE wave equation calculation
+        // FAE downhole card: prefer server-computed (Python transfer matrix,
+        // 11.9% mean RMSE) over JS-computed (12% RMSE but fixed damping)
         var faeCard = null;
         var rodModel = null;
-        if (wellDataGlobal && surfData && surfData.position && surfData.load) {
+
+        // Check for server-computed FAE card (from export_data.py)
+        if (card.FAEDownholeCard && card.FAEDownholeCard.position && card.FAEDownholeCard.load) {
+            faeCard = card.FAEDownholeCard;
+            if (card.FAEMeta) faeCard.meta = card.FAEMeta;
+        }
+
+        // Fall back to JS wave equation if no server card
+        if (!faeCard && wellDataGlobal && surfData && surfData.position && surfData.load) {
             var wd = wellDataGlobal.well_details || {};
             var rs = wellDataGlobal.rod_string || [];
             if (rs.length > 0 && wd.PumpDepth > 0) {
                 rodModel = WaveEquation.buildRodModel(rs, wd);
                 if (rodModel) {
-                    // Use per-well damping from XSPOC if available, else default 0.5
-                    // XSPOC Friction can range 0.1–10+ in their units; cap to reasonable range
                     var xdiag = wellDataGlobal.xdiag_last || {};
                     var dampVal = Math.min(Math.max(xdiag.Friction || 0.5, 0.05), 1.5);
-                    // Use XSPOC buoyant rod weight if available
                     var opts = { dampingFactor: dampVal };
                     if (xdiag.BouyRodWeight) opts.buoyantRodWeight = xdiag.BouyRodWeight;
                     faeCard = WaveEquation.calculateDownholeCard(
                         surfData.position, surfData.load, rodModel, opts
                     );
                 }
+            }
+        }
+
+        // Build rod model for diagnostics even if we used server card
+        if (!rodModel && wellDataGlobal) {
+            var wd2 = wellDataGlobal.well_details || {};
+            var rs2 = wellDataGlobal.rod_string || [];
+            if (rs2.length > 0 && wd2.PumpDepth > 0) {
+                rodModel = WaveEquation.buildRodModel(rs2, wd2);
             }
         }
 
