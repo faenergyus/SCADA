@@ -1145,13 +1145,35 @@ const CardPatterns = (function () {
                         if (bestSub === 'gas_interference') {
                             subReason = 'C-D sharpness=' + cd.toFixed(2) + ', A-B sharpness=' + ab.toFixed(2) + '. If both rounded → gas interference. Confirm with fluid level shot.';
                         } else if (bestSub === 'fluid_pound') {
-                            subReason = 'Fluid pound likely if fluid level is at pump intake. Card shows reduced area (' + f.areaRatio.toFixed(2) + ').';
+                            subReason = 'Area ' + (f.areaRatio * 100).toFixed(0) + '% of ideal. ';
+                            // Impact indicators
+                            if (maxDropLoc > 0.25) {
+                                subReason += 'Max load drop at ' + (maxDropLoc * 100).toFixed(0) + '% into downstroke (mid-stroke impact — plunger hitting liquid). ';
+                            } else {
+                                subReason += 'Max load drop at ' + (maxDropLoc * 100).toFixed(0) + '% into downstroke (early — less typical of pound). ';
+                            }
+                            if (earlyDn > 0.50) {
+                                subReason += 'High early downstroke load (' + (earlyDn * 100).toFixed(0) + '%) — gas compressing before plunger reaches liquid. ';
+                            }
+                            if (cd > 0.30) {
+                                subReason += 'Sharp C-D transition (' + cd.toFixed(2) + ') — consistent with plunger impact. ';
+                            } else {
+                                subReason += 'Gradual C-D transition (' + cd.toFixed(2) + ') — more typical of gas interference than pound. ';
+                            }
+                            subReason += 'Confirm with fluid level shot: fluid at pump intake = pound.';
                         } else if (bestSub === 'incomplete_fillage') {
-                            subReason = 'Moderate area reduction without strong mechanical signature. Pump partially filling.';
+                            subReason = 'Area ' + (f.areaRatio * 100).toFixed(0) + '% of ideal. ';
+                            subReason += 'Early downstroke load ' + (earlyDn * 100).toFixed(0) + '%, max drop at ' + (maxDropLoc * 100).toFixed(0) + '% into downstroke. ';
+                            if (cd > 0.40) {
+                                subReason += 'Sharp C-D (' + cd.toFixed(2) + ') — valves transferring normally, just not enough fluid entering barrel.';
+                            } else {
+                                subReason += 'Moderate C-D (' + cd.toFixed(2) + ') — partial fill without strong impact.';
+                            }
                         } else if (bestSub === 'worn_pump') {
-                            subReason = 'Card retains rectangular shape but reduced area. Progressive efficiency loss.';
+                            subReason = 'Card retains rectangular shape (flat top ' + (f.flatTop * 100).toFixed(0) + '%, flat bottom ' + (f.flatBottom * 100).toFixed(0) + '%) but reduced area (' + (f.areaRatio * 100).toFixed(0) + '%). Fluid slipping past plunger — progressive efficiency loss. Check for sand production.';
                         } else if (bestSub === 'bent_barrel') {
-                            subReason = 'Asymmetric card — possible mechanical interference in pump barrel.';
+                            subReason = 'Asymmetric card: flat top ' + (f.flatTop * 100).toFixed(0) + '% but flat bottom only ' + (f.flatBottom * 100).toFixed(0) + '%. ';
+                            subReason += 'Possible mechanical interference — plunger binding or barrel deformation. Compare with historical cards for onset timing.';
                         }
                         // Insert as secondary (position 1)
                         results.splice(1, 0, {
