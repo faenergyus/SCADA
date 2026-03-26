@@ -6,8 +6,8 @@
     <title>Well Detail — Forty Acres Rod Status</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-    <script src="js/wave-equation.js?v=24"></script>
-    <script src="js/card-patterns.js?v=24"></script>
+    <script src="js/wave-equation.js?v=25"></script>
+    <script src="js/card-patterns.js?v=25"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -756,6 +756,53 @@
         if (!result || !result.primary) {
             panel.classList.add('hidden');
             return;
+        }
+
+        // ── History override for unreliable cards (S-type, startup) ──
+        // If XSPOC condition history shows >80% consistency AND the current
+        // card is S-type or startup (pump running < 5 min), the single-card
+        // diagnosis is unreliable. Override with the historical condition.
+        var historyOverride = null;
+        var condHist2 = wellDataGlobal ? (wellDataGlobal.condition_history || null) : null;
+        var isUnreliable = (cardType === 'S' || (pumpState && (pumpState.state === 'starting' || pumpState.state === 'idle')));
+        if (isUnreliable && condHist2 && condHist2.conditions && condHist2.conditions.length > 0 && condHist2.total_cards >= 5) {
+            var topCond = condHist2.conditions[0];
+            var topPct = topCond.count / condHist2.total_cards * 100;
+            if (topPct >= 70) {
+                var histPrimary = topCond.condition.split('.')[0].trim().toLowerCase();
+                // Map XSPOC condition names to our L1 pattern IDs
+                var histMap = {
+                    'full pump': 'full_pump', 'fluid pound': 'under_filled',
+                    'gas interference': 'under_filled', 'incomplete pump fillage': 'pump_issue',
+                    'worn pump barrel': 'pump_issue', 'bent pump barrel or sticking plunger': 'pump_issue',
+                    'slight sv leak': 'sv_leak', 'sv leak': 'sv_leak', 'severe sv leak': 'sv_leak',
+                    'slight tv leak': 'tv_leak', 'tv leak': 'tv_leak', 'severe tv leak': 'tv_leak',
+                    'rod part': 'rod_part',
+                };
+                var histId = histMap[histPrimary];
+                if (histId && result.primary && result.primary.pattern.id !== histId) {
+                    // Find the pattern object for the history condition
+                    var histPattern = null;
+                    for (var hp = 0; hp < CardPatterns.PATTERNS.length; hp++) {
+                        if (CardPatterns.PATTERNS[hp].id === histId) { histPattern = CardPatterns.PATTERNS[hp]; break; }
+                    }
+                    if (histPattern) {
+                        historyOverride = {
+                            pattern: histPattern,
+                            confidence: Math.round(topPct) / 100,
+                            physicsRule: 'Historical override: XSPOC classified this well as "' + topCond.condition.split('.')[0].trim() +
+                                '" in ' + Math.round(topPct) + '% of ' + condHist2.total_cards + ' cards over ' + condHist2.period_days + ' days. ' +
+                                'Current card is a ' + (cardType === 'S' ? 'Scan (S)' : pumpState.label) + ' card — less reliable for diagnosis. ' +
+                                'Deferring to historical pattern.',
+                            matchDetails: {},
+                        };
+                        // Swap: history becomes primary, current diagnosis becomes secondary
+                        var originalPrimary = result.primary;
+                        result.primary = historyOverride;
+                        result.secondary = originalPrimary;
+                    }
+                }
+            }
         }
 
         // ── Fillage sanity check ──
