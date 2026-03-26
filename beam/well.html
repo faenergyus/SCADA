@@ -6,8 +6,8 @@
     <title>Well Detail — Forty Acres Rod Status</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-    <script src="js/wave-equation.js?v=18"></script>
-    <script src="js/card-patterns.js?v=18"></script>
+    <script src="js/wave-equation.js?v=19"></script>
+    <script src="js/card-patterns.js?v=19"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -379,15 +379,22 @@
         }
 
         // Run diagnostics on the best available downhole card
-        // IMPORTANT: Use XDiag DH card (correct plunger-load reference frame).
-        // Do NOT use POC DH card (true sinker-bar load, different reference).
+        // IMPORTANT: Use XDiag DH card ONLY (correct plunger-load reference frame).
+        // Do NOT use POC DH card for diagnosis (true sinker-bar load, different reference).
         // Fall back to FAE Calc (transfer matrix) if no XDiag available.
-        var diagCard = dhData || faeCard;
+        // POC DH card is shown on the plot but NOT used for diagnosis.
+        var diagCard = dhData ? dhData : faeCard;
 
         // Surface card fallback diagnosis (for S-type cards without XDiag)
+        // When no XDiag DH card, the FAE Calc DH card is based on the transfer
+        // matrix which has accuracy issues. The surface card is always reliable.
+        // Surface card diagnosis takes priority over FAE Calc for S-type cards.
         var surfDiag = null;
         if (!dhData && surfData && surfData.position) {
             surfDiag = CardPatterns.diagnoseSurfaceCard(surfData.position, surfData.load);
+            // Boost surface card confidence since it's the most reliable source
+            // for S-type cards (no XDiag, FAE Calc is approximate)
+            if (surfDiag) surfDiag.confidence = Math.min(0.85, surfDiag.confidence + 0.25);
         }
 
         // Majority diagnosis across all loaded cards (temporal stability)
