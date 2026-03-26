@@ -433,8 +433,11 @@
             infoStr += ' | Fo=' + wellCalc.Fo + ' lbs, FAP=' + wellCalc.estFAP + ' ft';
         }
         if (faeCard && faeCard.meta) {
-            infoStr += ' | FAE: ζ=' + faeCard.meta.dampingFactor +
-                ', c=' + faeCard.meta.avgWaveSpeedFtS + ' ft/s';
+            var zeta = faeCard.meta.dampingFactor || faeCard.meta.damping || '?';
+            var waveC = faeCard.meta.avgWaveSpeedFtS || faeCard.meta.pump_depth_ft || '';
+            var method = faeCard.meta.method || 'Transfer matrix';
+            infoStr += ' | FAE: ' + method;
+            if (zeta !== '?') infoStr += ', ζ=' + zeta;
         }
         document.getElementById('cardInfo').textContent = infoStr;
     }
