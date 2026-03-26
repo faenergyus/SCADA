@@ -6,8 +6,8 @@
     <title>Well Detail — Forty Acres Rod Status</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-    <script src="js/wave-equation.js?v=19"></script>
-    <script src="js/card-patterns.js?v=19"></script>
+    <script src="js/wave-equation.js?v=20"></script>
+    <script src="js/card-patterns.js?v=20"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -379,11 +379,10 @@
         }
 
         // Run diagnostics on the best available downhole card
-        // IMPORTANT: Use XDiag DH card ONLY (correct plunger-load reference frame).
-        // Do NOT use POC DH card for diagnosis (true sinker-bar load, different reference).
-        // Fall back to FAE Calc (transfer matrix) if no XDiag available.
-        // POC DH card is shown on the plot but NOT used for diagnosis.
-        var diagCard = dhData ? dhData : faeCard;
+        // IMPORTANT: Use XDiag DH card ONLY for DH-based classification.
+        // For S-type cards (no XDiag): skip DH classification, use surface card only.
+        // POC DH card and FAE Calc are shown on plot but NOT used for diagnosis.
+        var diagCard = dhData ? dhData : null;
 
         // Surface card fallback diagnosis (for S-type cards without XDiag)
         // When no XDiag DH card, the FAE Calc DH card is based on the transfer
@@ -728,12 +727,31 @@
         var panel = document.getElementById('diagnosisPanel');
         var content = document.getElementById('diagnosisContent');
 
-        if (!cardData || !cardData.position || cardData.position.length < 10) {
+        // If no DH card data (S-type), still show diagnosis from surface card
+        var result;
+        if (cardData && cardData.position && cardData.position.length >= 10) {
+            result = CardPatterns.analyzeCard(cardData.position, cardData.load, rodModel);
+        } else if (surfDiag && surfDiag.condition !== 'unknown') {
+            // Build a result from surface card diagnosis
+            var surfPattern = null;
+            for (var sp = 0; sp < CardPatterns.PATTERNS.length; sp++) {
+                if (CardPatterns.PATTERNS[sp].id === surfDiag.condition) {
+                    surfPattern = CardPatterns.PATTERNS[sp]; break;
+                }
+            }
+            if (surfPattern) {
+                result = {
+                    primary: { pattern: surfPattern, confidence: surfDiag.confidence, physicsRule: surfDiag.evidence, matchDetails: {} },
+                    secondary: null,
+                    features: {},
+                    allMatches: [{ pattern: surfPattern, confidence: surfDiag.confidence, physicsRule: surfDiag.evidence, matchDetails: {} }],
+                };
+            }
+        }
+        if (!result || !result.primary) {
             panel.classList.add('hidden');
             return;
         }
-
-        var result = CardPatterns.analyzeCard(cardData.position, cardData.load, rodModel);
         if (!result || !result.primary) {
             panel.classList.add('hidden');
             return;
