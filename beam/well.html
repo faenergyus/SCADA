@@ -6,8 +6,8 @@
     <title>Well Detail — Forty Acres Rod Status</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-    <script src="js/wave-equation.js?v=23"></script>
-    <script src="js/card-patterns.js?v=23"></script>
+    <script src="js/wave-equation.js?v=24"></script>
+    <script src="js/card-patterns.js?v=24"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -863,6 +863,21 @@
         if (fillageNote) {
             html += '<div class="border rounded-lg p-3 mb-3 bg-purple-900/30 text-purple-300 border-purple-700">';
             html += '<strong>Fillage Check:</strong> ' + escapeHtml(fillageNote);
+            html += '</div>';
+        }
+
+        // ── XSPOC condition history (from exported well_details) ──
+        var condHist = wellDataGlobal ? (wellDataGlobal.condition_history || null) : null;
+        if (condHist && condHist.conditions && condHist.conditions.length > 0) {
+            html += '<div class="bg-gray-800/50 rounded-lg p-2 mb-3 text-sm">';
+            html += '<span class="text-gray-500">XSPOC History (' + condHist.total_cards + ' cards, ' + condHist.period_days + 'd):</span> ';
+            for (var hi = 0; hi < Math.min(3, condHist.conditions.length); hi++) {
+                var hc = condHist.conditions[hi];
+                var hPct = Math.round(hc.count / condHist.total_cards * 100);
+                var hColor = hi === 0 ? 'text-gray-200' : 'text-gray-500';
+                if (hi > 0) html += ', ';
+                html += '<span class="' + hColor + '">' + escapeHtml(hc.condition.split('.')[0]) + ' ' + hPct + '%</span>';
+            }
             html += '</div>';
         }
 
