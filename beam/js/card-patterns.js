@@ -629,6 +629,48 @@ const CardPatterns = (function () {
             }
         }
 
+        // Max downstroke load drop LOCATION (0=start of downstroke, 1=end)
+        // Published: fluid pound impact occurs MID-downstroke (plunger travels through
+        // gas void then hits liquid). Full pump/incomplete fillage drop early (C-D transition).
+        var maxDropLoc = 0;
+        if (downIndices.length > 5) {
+            var bestDrop = 0;
+            for (var k = 1; k < downIndices.length; k++) {
+                var kDrop = normLoad[downIndices[k - 1]] - normLoad[downIndices[k]];
+                if (kDrop > bestDrop) {
+                    bestDrop = kDrop;
+                    maxDropLoc = k / downIndices.length;
+                }
+            }
+        }
+
+        // Downstroke convexity: is the load profile convex (gas compression) or concave?
+        // Convex (positive) = load stays high mid-downstroke before dropping → gas in barrel
+        // Concave (negative) = normal rapid drop at C-D
+        // Published: gas interference shows gradual compression → convex downstroke profile
+        var dnConvexity = 0;
+        if (downIndices.length > 9) {
+            var dnThird = Math.max(1, Math.floor(downIndices.length / 3));
+            var earlyAvg = 0, midAvg = 0, lateAvg = 0;
+            for (var k = 0; k < dnThird; k++) earlyAvg += normLoad[downIndices[k]];
+            earlyAvg /= dnThird;
+            for (var k = dnThird; k < 2 * dnThird; k++) midAvg += normLoad[downIndices[k]];
+            midAvg /= dnThird;
+            for (var k = 2 * dnThird; k < downIndices.length; k++) lateAvg += normLoad[downIndices[k]];
+            lateAvg /= (downIndices.length - 2 * dnThird);
+            dnConvexity = midAvg - (earlyAvg + lateAvg) / 2;
+        }
+
+        // Early downstroke load (first third average, normalized)
+        // High = gas compression holding load up; Low = rapid valve opening
+        var earlyDnLoad = 0;
+        if (downIndices.length > 6) {
+            var eThird = Math.max(1, Math.floor(downIndices.length / 3));
+            var eSum = 0;
+            for (var k = 0; k < eThird; k++) eSum += normLoad[downIndices[k]];
+            earlyDnLoad = eSum / eThird;
+        }
+
         return {
             areaRatio: areaRatio,
             loadRange: loadRangeRatio,
@@ -651,6 +693,9 @@ const CardPatterns = (function () {
             abMaxSlope: abMaxSlope,
             dnLoadElev: dnLoadElev,
             upDropPt: upDropPt,
+            maxDropLoc: maxDropLoc,
+            dnConvexity: dnConvexity,
+            earlyDnLoad: earlyDnLoad,
             // Raw stats for display
             _minLoad: minLoad,
             _maxLoad: maxLoad,
@@ -886,10 +931,15 @@ const CardPatterns = (function () {
                 if (cid === 'under_filled') {
                     reason = 'Incomplete fillage: card area ' + (f.areaRatio * 100).toFixed(0) + '% of ideal. ';
                     reason += 'Load range ' + lr + ' lbs over ' + pr + ' in stroke. ';
-                    if (ab < 0.25 && cd < 0.30) {
-                        reason += 'Both corners rounded (A-B=' + ab.toFixed(2) + ', C-D=' + cd.toFixed(2) + ') — suggests gas interference (banana shape). ';
-                    } else if (cd > 0.30) {
-                        reason += 'Sharp C-D transition (' + cd.toFixed(2) + ') — suggests fluid pound (plunger impact on liquid). ';
+                    // Use new features for better discrimination
+                    if (f.maxDropLoc > 0.25 && f.earlyDnLoad > 0.45) {
+                        reason += 'Max load drop at ' + (f.maxDropLoc * 100).toFixed(0) + '% into downstroke with high early DN load (' + (f.earlyDnLoad * 100).toFixed(0) + '%) — gas compressing before plunger hits liquid. Likely FLUID POUND. ';
+                    } else if (ab < 0.25 && cd < 0.30) {
+                        reason += 'Both corners rounded (A-B=' + ab.toFixed(2) + ', C-D=' + cd.toFixed(2) + ') — suggests GAS INTERFERENCE (banana shape). ';
+                    } else if (f.maxDropLoc < 0.20 && f.earlyDnLoad < 0.45) {
+                        reason += 'Load drops early in downstroke (at ' + (f.maxDropLoc * 100).toFixed(0) + '%) with normal early DN load — INCOMPLETE FILLAGE without severe gas or impact. ';
+                    } else {
+                        reason += 'C-D sharpness=' + cd.toFixed(2) + ', drop location=' + (f.maxDropLoc * 100).toFixed(0) + '%. ';
                     }
                     reason += 'Take fluid level shot to confirm: fluid at pump = fluid pound, above pump = gas.';
                 } else if (cid === 'pump_issue') {

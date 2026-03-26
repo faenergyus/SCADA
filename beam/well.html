@@ -6,8 +6,8 @@
     <title>Well Detail — Forty Acres Rod Status</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-    <script src="js/wave-equation.js?v=15"></script>
-    <script src="js/card-patterns.js?v=15"></script>
+    <script src="js/wave-equation.js?v=16"></script>
+    <script src="js/card-patterns.js?v=16"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -849,6 +849,7 @@
             cdSharpness: 'C→D Avg Slope', abSharpness: 'A→B Avg Slope',
             cdMaxSlope: 'C→D Max Slope', abMaxSlope: 'A→B Max Slope',
             dnLoadElev: 'DN Load Elev', upDropPt: 'UP Drop Point',
+            maxDropLoc: 'Max Drop Location', dnConvexity: 'DN Convexity', earlyDnLoad: 'Early DN Load',
         };
         for (var key in featureLabels) {
             if (f[key] !== undefined) {
