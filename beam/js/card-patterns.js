@@ -953,6 +953,7 @@ const CardPatterns = (function () {
         // ── Step 2: Physics overrides (only for unambiguous cases) ──
         var ar = f.areaRatio, ft = f.flatTop, fb = f.flatBottom;
         var ab = f.abSharpness, cd = f.cdSharpness, dnE = f.dnLoadElev;
+        var maxDropLoc = f.maxDropLoc || 0, earlyDn = f.earlyDnLoad || 0;
         var override = null;
 
         // Override A: Rod part — tiny flat card, no pump action
