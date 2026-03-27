@@ -6,8 +6,8 @@
     <title>Well Detail — Forty Acres Rod Status</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-    <script src="js/wave-equation.js?v=26"></script>
-    <script src="js/card-patterns.js?v=28"></script>
+    <script src="js/wave-equation.js?v=29"></script>
+    <script src="js/card-patterns.js?v=29"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -431,6 +431,8 @@
             ' | Fillage: ' + vf(card.Fillage, 1, '%');
         if (wellCalc) {
             infoStr += ' | Fo=' + wellCalc.Fo + ' lbs, FAP=' + wellCalc.estFAP + ' ft';
+            if (wellCalc.areaFillage != null) infoStr += ' (' + wellCalc.areaFillage + '% fill)';
+            if (wellCalc.actPPRL) infoStr += ' | PPRL=' + wellCalc.actPPRL;
         }
         if (faeCard && faeCard.meta) {
             var zeta = faeCard.meta.dampingFactor || faeCard.meta.damping || '?';
@@ -718,24 +720,46 @@
             foFillage = Fo > 0 ? Math.round(actualFoDH / Fo * 100) : null;
         }
 
-        // Estimated FAP from actual Fo
-        // FAP = actual_Fo / (fluid_gradient × plunger_area)
-        // Cap at pump depth — FAP > depth is physically impossible
-        // (indicates dynamic effects inflating the measured Fo)
+        // Estimated FAP using DH card AREA method
+        // Card area = pump work per stroke. Dynamic effects cancel over a full cycle
+        // (energy in on acceleration = energy out on deceleration).
+        // Fillage = actual_card_area / ideal_card_area
+        // Ideal area = Fo × net_stroke (rectangular card at full fill)
+        // FAP = fillage × pump_depth
         var estFAP = null;
         var fapNote = '';
-        var bestFo = actualFoDH || actualFoSurf;
-        if (bestFo > 0 && fluidGrad > 0 && plungerArea > 0) {
-            var rawFAP = Math.round(bestFo / (fluidGrad * plungerArea));
-            if (rawFAP > pumpDepthFt) {
-                // Actual Fo exceeds max possible — dynamic effects, tubing pressure,
-                // or friction inflating the measured load difference
-                estFAP = Math.round(pumpDepthFt);
-                fapNote = 'Measured Fo (' + Math.round(bestFo) + ' lbs) exceeds calculated max Fo (' +
-                    Fo + ' lbs). FAP capped at pump depth. Dynamic effects or tubing pressure ' +
-                    'contributing ' + Math.round((bestFo - Fo) / Fo * 100) + '% additional load.';
-            } else {
-                estFAP = rawFAP;
+        var areaFillage = null;
+        if (dhData && dhData.position && dhData.load && dhData.position.length > 10 && Fo > 0) {
+            var dhPos = dhData.position;
+            var dhLd = dhData.load;
+            var dhN = Math.min(dhPos.length, dhLd.length);
+            // Shoelace for DH card area
+            var dhArea = 0;
+            for (var i = 0; i < dhN; i++) {
+                var j = (i + 1) % dhN;
+                dhArea += dhPos[i] * dhLd[j] - dhPos[j] * dhLd[i];
+            }
+            dhArea = Math.abs(dhArea) / 2;
+            // Net stroke from DH card
+            var dhNetStroke = 0;
+            for (var i = 0; i < dhN; i++) {
+                if (dhPos[i] > dhNetStroke) dhNetStroke = dhPos[i];
+            }
+            var idealArea = Fo * dhNetStroke;
+            if (idealArea > 0) {
+                areaFillage = Math.min(100, Math.round(dhArea / idealArea * 100));
+                estFAP = Math.round(areaFillage / 100 * pumpDepthFt);
+                if (areaFillage >= 100) {
+                    fapNote = 'DH card area (' + Math.round(dhArea) + ') exceeds ideal (' +
+                        Math.round(idealArea) + '). Fillage capped at 100%. Dynamic work inflating card area.';
+                }
+            }
+        }
+        // Fallback to Fo-based if no DH card
+        if (estFAP == null && fluidGrad > 0 && plungerArea > 0) {
+            var bestFo = actualFoDH || actualFoSurf;
+            if (bestFo > 0) {
+                estFAP = Math.min(Math.round(pumpDepthFt), Math.round(bestFo / (fluidGrad * plungerArea)));
             }
         }
 
@@ -749,6 +773,7 @@
             actualFoSurf: Math.round(actualFoSurf),  // Fo from surface card
             actualFoDH: actualFoDH,     // Fo from DH card (Echometer method)
             foFillage: foFillage,       // fillage from Fo ratio (%)
+            areaFillage: areaFillage,   // fillage from DH card area method (%)
             estFAP: estFAP,             // estimated fluid above pump (ft)
             fapNote: fapNote,           // note if FAP was capped
             pumpDepthFt: Math.round(pumpDepthFt),
