@@ -719,10 +719,24 @@
         }
 
         // Estimated FAP from actual Fo
+        // FAP = actual_Fo / (fluid_gradient × plunger_area)
+        // Cap at pump depth — FAP > depth is physically impossible
+        // (indicates dynamic effects inflating the measured Fo)
         var estFAP = null;
+        var fapNote = '';
         var bestFo = actualFoDH || actualFoSurf;
         if (bestFo > 0 && fluidGrad > 0 && plungerArea > 0) {
-            estFAP = Math.round(bestFo / (fluidGrad * plungerArea));
+            var rawFAP = Math.round(bestFo / (fluidGrad * plungerArea));
+            if (rawFAP > pumpDepthFt) {
+                // Actual Fo exceeds max possible — dynamic effects, tubing pressure,
+                // or friction inflating the measured load difference
+                estFAP = Math.round(pumpDepthFt);
+                fapNote = 'Measured Fo (' + Math.round(bestFo) + ' lbs) exceeds calculated max Fo (' +
+                    Fo + ' lbs). FAP capped at pump depth. Dynamic effects or tubing pressure ' +
+                    'contributing ' + Math.round((bestFo - Fo) / Fo * 100) + '% additional load.';
+            } else {
+                estFAP = rawFAP;
+            }
         }
 
         return {
@@ -736,6 +750,7 @@
             actualFoDH: actualFoDH,     // Fo from DH card (Echometer method)
             foFillage: foFillage,       // fillage from Fo ratio (%)
             estFAP: estFAP,             // estimated fluid above pump (ft)
+            fapNote: fapNote,           // note if FAP was capped
             pumpDepthFt: Math.round(pumpDepthFt),
             plungerArea: Math.round(plungerArea * 1000) / 1000,
             fluidGrad: Math.round(fluidGrad * 10000) / 10000,
@@ -1109,6 +1124,9 @@
             var foLabel = wellCalc.actualFoDH != null ? 'Actual Fo (DH)' : 'Actual Fo (surf)';
             html += '<div class="bg-gray-800 rounded px-2 py-1.5"><span class="text-gray-500">' + foLabel + ':</span> <span class="text-gray-200">' + foSrc + ' lbs</span></div>';
             html += '<div class="bg-gray-800 rounded px-2 py-1.5"><span class="text-gray-500">Est FAP:</span> <span class="text-fae-gold">' + (wellCalc.estFAP || '—') + ' ft</span> <span class="text-gray-600 text-[10px]">/ ' + wellCalc.pumpDepthFt + ' ft depth</span></div>';
+            if (wellCalc.fapNote) {
+                html += '<div class="col-span-full text-xs text-yellow-500 px-1">' + escapeHtml(wellCalc.fapNote) + '</div>';
+            }
             html += '<div class="bg-gray-800 rounded px-2 py-1.5"><span class="text-gray-500">Buoyant Wr:</span> <span class="text-gray-200">' + wellCalc.buoyWt + ' lbs</span></div>';
             html += '<div class="bg-gray-800 rounded px-2 py-1.5"><span class="text-gray-500">Exp PPRL:</span> <span class="text-gray-200">' + wellCalc.expPPRL + ' lbs</span></div>';
             html += '<div class="bg-gray-800 rounded px-2 py-1.5"><span class="text-gray-500">Act PPRL:</span> <span class="text-gray-200">' + (wellCalc.actPPRL || '—') + ' lbs</span></div>';
