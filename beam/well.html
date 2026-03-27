@@ -720,42 +720,73 @@
             foFillage = Fo > 0 ? Math.round(actualFoDH / Fo * 100) : null;
         }
 
-        // Estimated FAP using DH card AREA method
-        // Card area = pump work per stroke. Dynamic effects cancel over a full cycle
-        // (energy in on acceleration = energy out on deceleration).
-        // Fillage = actual_card_area / ideal_card_area
-        // Ideal area = Fo × net_stroke (rectangular card at full fill)
-        // FAP = fillage × pump_depth
+        // Estimated FAP — Hybrid method (Echometer/McCoy)
+        //
+        // Fo_max = P_discharge × Ap  (max fluid load when PIP=0)
+        //   where P_discharge = tubing_pressure + fluid_gradient × pump_depth
+        //
+        // Method 1 (Plateau): Read Fo from DH card mid-stroke plateaus
+        //   Fo = avg_upstroke_load - avg_downstroke_load
+        //   Valid when Fo <= Fo_max (no dynamic inflation)
+        //
+        // Method 2 (Area fallback): Use card area / (Fo_max × net_stroke)
+        //   When dynamics inflate plateau Fo beyond Fo_max
+        //
+        // PIP = (Fo_max - Fo) / Ap
+        // FAP = PIP / fluid_gradient
         var estFAP = null;
         var fapNote = '';
         var areaFillage = null;
-        if (dhData && dhData.position && dhData.load && dhData.position.length > 10 && Fo > 0) {
+        var fapMethod = '';
+
+        // Fo_max from well data
+        var tubingP = rodModel.tubingPressure || 0;
+        var P_discharge = tubingP + fluidGrad * pumpDepthFt;  // psi at pump depth
+        var Fo_max = P_discharge * plungerArea;
+
+        if (dhData && dhData.position && dhData.load && dhData.position.length > 10 && Fo_max > 0) {
             var dhPos = dhData.position;
             var dhLd = dhData.load;
             var dhN = Math.min(dhPos.length, dhLd.length);
-            // Shoelace for DH card area
+
+            // Method 1: Plateau Fo from DH card
+            var Fo_plateau = actualFoDH || 0;
+
+            // Method 2: Area Fo
             var dhArea = 0;
             for (var i = 0; i < dhN; i++) {
                 var j = (i + 1) % dhN;
                 dhArea += dhPos[i] * dhLd[j] - dhPos[j] * dhLd[i];
             }
             dhArea = Math.abs(dhArea) / 2;
-            // Net stroke from DH card
             var dhNetStroke = 0;
             for (var i = 0; i < dhN; i++) {
                 if (dhPos[i] > dhNetStroke) dhNetStroke = dhPos[i];
             }
-            var idealArea = Fo * dhNetStroke;
-            if (idealArea > 0) {
-                areaFillage = Math.min(100, Math.round(dhArea / idealArea * 100));
-                estFAP = Math.round(areaFillage / 100 * pumpDepthFt);
-                if (areaFillage >= 100) {
-                    fapNote = 'DH card area (' + Math.round(dhArea) + ') exceeds ideal (' +
-                        Math.round(idealArea) + '). Fillage capped at 100%. Dynamic work inflating card area.';
-                }
+            var Fo_area = dhNetStroke > 0 ? dhArea / dhNetStroke : 0;
+
+            // Choose method
+            var Fo_best;
+            if (Fo_plateau > 0 && Fo_plateau <= Fo_max * 1.05) {
+                Fo_best = Fo_plateau;
+                fapMethod = 'Plateau (Echometer)';
+            } else {
+                Fo_best = Math.min(Fo_area, Fo_max);
+                fapMethod = 'Area (dynamics exceed Fo_max)';
+            }
+
+            // PIP and FAP
+            var PIP = Math.max(0, (Fo_max - Fo_best) / plungerArea);
+            estFAP = Math.min(Math.round(pumpDepthFt), Math.round(PIP / fluidGrad));
+            areaFillage = Math.min(100, Math.round(Fo_best / Fo_max * 100));
+
+            if (Fo_plateau > Fo_max * 1.05) {
+                fapNote = 'DH card plateau Fo (' + Math.round(Fo_plateau) + ') exceeds Fo_max (' +
+                    Math.round(Fo_max) + '). Dynamic effects dominate — using area method. PIP=' +
+                    Math.round(PIP) + ' psi.';
             }
         }
-        // Fallback to Fo-based if no DH card
+        // Fallback to simple Fo-based if no DH card
         if (estFAP == null && fluidGrad > 0 && plungerArea > 0) {
             var bestFo = actualFoDH || actualFoSurf;
             if (bestFo > 0) {
