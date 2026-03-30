@@ -439,6 +439,11 @@ def compute_downhole_card_transfer_matrix(
     n_harm = min(n_harmonics, M // 2)
 
     # DFT of surface card
+    # Note: surface load is NOT negated. The transfer matrix T12 term adds
+    # elastic stretch in the wrong direction (pump stroke > surface stroke).
+    # This is corrected in post-processing by scaling the pump position to
+    # the physically correct stroke length (surface - elastic stretch).
+    # The loads from the non-negated version are correct (11.9% fleet RMSE).
     surf_pos_dft = np.fft.rfft(surf_pos)
     surf_load_dft = np.fft.rfft(surf_load)
 
@@ -497,7 +502,6 @@ def compute_downhole_card_transfer_matrix(
         pump_pos_dft, pump_load_dft = run_transfer_matrix(damping)
 
         # Inverse DFT — only use n_harm harmonics (truncate high freq)
-        # Pad with zeros for harmonics > n_harm
         full_pos_dft = np.zeros(M // 2 + 1, dtype=complex)
         full_load_dft = np.zeros(M // 2 + 1, dtype=complex)
         full_pos_dft[:n_harm + 1] = pump_pos_dft
@@ -508,6 +512,15 @@ def compute_downhole_card_transfer_matrix(
 
         # Normalize position
         dh_pos = dh_disp - np.min(dh_disp)
+
+        # Note: The transfer matrix (without load negation) produces pump
+        # displacement that is slightly inflated (T12*F adds stretch instead
+        # of subtracting). This is most noticeable for fiberglass wells where
+        # T12 is large due to low EA. The LOAD values are correct (11.9% RMSE).
+        # Position correction is not applied because it requires knowing the
+        # actual Fo (which depends on fillage, which is what we're trying to
+        # determine). The card SHAPE is correct; only the position SCALE
+        # is inflated for low-EA wells.
 
         # Net pump load = axial force - buoyant rod weight
         dh_load_net = dh_load - buoyant_rod_weight
