@@ -781,9 +781,11 @@
             areaFillage = Math.min(100, Math.round(Fo_best / Fo_max * 100));
 
             if (Fo_plateau > Fo_max * 1.05) {
-                fapNote = 'DH card plateau Fo (' + Math.round(Fo_plateau) + ') exceeds Fo_max (' +
-                    Math.round(Fo_max) + '). Dynamic effects dominate — using area method. PIP=' +
-                    Math.round(PIP) + ' psi.';
+                fapNote = 'DH card Fo (' + Math.round(Fo_plateau) + ' lbs) exceeds max possible Fo (' +
+                    Math.round(Fo_max) + ' lbs at PIP=0). ' +
+                    'Dynamic rod forces inflating card loads beyond static fluid load. ' +
+                    'FAP estimate unreliable for this well — recommend acoustic fluid level shot. ' +
+                    '(Ref: Rowlan/McCoy PETSOC-2009-170: "PIP from max/min pump card loads usually calculates too low.")';
             }
         }
         // Fallback to simple Fo-based if no DH card
