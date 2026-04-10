@@ -828,11 +828,64 @@ const CardPatterns = (function () {
     }
 
     // -----------------------------------------------------------------------
+    // kNN Classifier
+    // -----------------------------------------------------------------------
+
+    /**
+     * kNN classifier (k=3, distance-weighted, standardized features).
+     * Uses 11 features (drops flatBottom and upDropPt which hurt accuracy).
+     * Trained on 56 XSPOC-classified wells. 66% 6-class LOO-CV accuracy.
+     *
+     * @param {Array} fVec - 13-element feature vector from extractFeatures
+     * @returns {Object} { label, confidence, neighbors }
+     */
+    function classifyKNN(fVec) {
+        var nf = KNN_KEEP.length;
+        var k = 3;
+        // Standardize query using precomputed mean/std
+        var q = new Array(nf);
+        for (var fi = 0; fi < nf; fi++) {
+            q[fi] = (fVec[KNN_KEEP[fi]] - KNN_MEAN[fi]) / KNN_STDDEV[fi];
+        }
+        // Compute distances to all training points
+        var dists = new Array(KNN_STD_DATA.length);
+        for (var i = 0; i < KNN_STD_DATA.length; i++) {
+            var t = KNN_STD_DATA[i];
+            var dist = 0;
+            for (var fi = 0; fi < nf; fi++) {
+                var d = q[fi] - t.vec[fi];
+                dist += d * d;
+            }
+            dists[i] = { dist: Math.sqrt(dist), label: t.label };
+        }
+        // Sort by distance
+        dists.sort(function (a, b) { return a.dist - b.dist; });
+        // Distance-weighted voting
+        var votes = {};
+        var totalWeight = 0;
+        for (var i = 0; i < k && i < dists.length; i++) {
+            var w = 1.0 / (dists[i].dist + 0.01);
+            votes[dists[i].label] = (votes[dists[i].label] || 0) + w;
+            totalWeight += w;
+        }
+        // Find winner
+        var bestLabel = null, bestVote = -1;
+        for (var label in votes) {
+            if (votes.hasOwnProperty(label) && votes[label] > bestVote) {
+                bestVote = votes[label];
+                bestLabel = label;
+            }
+        }
+        var confidence = totalWeight > 0 ? bestVote / totalWeight : 0;
+        return { label: bestLabel, confidence: confidence, neighbors: dists.slice(0, k) };
+    }
+
+    // -----------------------------------------------------------------------
     // Pattern Matching
     // -----------------------------------------------------------------------
 
     // -----------------------------------------------------------------------
-    // Empirical Centroids — computed from 47 wells (2026-03-23)
+    // Empirical Centroids — fleet-retrained from 56 wells (2026-04-10)
     //
     // Each centroid is [areaRatio, flatTop, flatBottom, fluidPoundIdx,
     //   svTransition, tvTransition, cdSharpness, abSharpness, dnLoadElev, upDropPt]
@@ -862,27 +915,113 @@ const CardPatterns = (function () {
         worn_pump:          { mean: [0.730, 0.754, 0.591, 0.202, 0.705, 0.718, 0.610, 0.527, 0.107, 0.852, 0.241, -0.243, 0.466], std: [0.140, 0.203, 0.121, 0.082, 0.397, 0.546, 0.422, 0.377, 0.055, 0.250, 0.232, 0.106, 0.216], n: 141, group: 'pump_issue' },
         bent_barrel:        { mean: [0.768, 0.739, 0.527, 0.212, 0.732, 0.930, 0.430, 0.667, 0.126, 0.918, 0.136, -0.091, 0.274], std: [0.033, 0.125, 0.183, 0.050, 0.253, 0.189, 0.370, 0.263, 0.033, 0.097, 0.132, 0.091, 0.114], n: 458, group: 'pump_issue' },
     };
-    // L1 broad-class centroids — BLENDED (30% published physics templates + 70% fleet data)
-    //
-    // Physics templates: synthetic cards constructed from Echometer TechNotes,
-    //   McCoy/Rowlan/Podio SWPSC 2015, EngineerFix, SPE-173964 criteria.
-    //   Define what each condition SHOULD look like based on published literature.
-    //
-    // Fleet data: snapshot features from 44 wells (single latest N-type card per well).
-    //   Captures real-world rod dynamics, measurement noise, and well-specific distortion.
-    //
-    // Blending anchors the centroids in physics while staying grounded in reality.
-    // The std values are from the fleet data (wider = more variation in real wells).
-    //
-    // Updated 2026-03-26.
+    // L1 broad-class centroids — fleet-retrained from 56 XSPOC-classified wells
+    // Used as fallback reference. Primary classifier is kNN (see KNN_TRAINING below).
+    // Updated 2026-04-10.
     var CENTROIDS = {
-        full_pump:    { mean: [0.862, 0.806, 0.776, 0.421, 0.306, 0.999, 0.533, 0.616, 0.055, 0.933, 0.126, -0.135, 0.302], std: [0.060, 0.080, 0.120, 0.100, 1.700, 0.030, 0.200, 0.200, 0.050, 0.060, 0.080, 0.080, 0.180], n: 7 },
-        pump_issue:   { mean: [0.754, 0.748, 0.541, 0.366, 0.088, 0.947, 0.464, 0.514, 0.122, 0.783, 0.156, -0.172, 0.456], std: [0.090, 0.230, 0.180, 0.100, 0.800, 0.360, 0.340, 0.300, 0.060, 0.310, 0.120, 0.100, 0.210], n: 11 },
-        rod_part:     { mean: [0.414, 0.362, 0.512, 0.132, -0.097, 0.043, 0.047, 0.022, 0.263, 0.493, 0.483, -0.184, 0.430], std: [0.180, 0.180, 0.150, 0.100, 0.300, 0.250, 0.100, 0.100, 0.200, 0.200, 0.250, 0.150, 0.200], n: 1 },
-        sv_leak:      { mean: [0.751, 0.714, 0.439, 0.388, 0.614, 0.645, 0.346, 0.251, 0.137, 0.810, 0.373, -0.157, 0.261], std: [0.080, 0.240, 0.100, 0.130, 0.460, 0.460, 0.470, 0.120, 0.050, 0.220, 0.160, 0.060, 0.120], n: 2 },
-        tv_leak:      { mean: [0.786, 0.538, 0.754, 0.324, 0.768, 0.973, 0.386, 0.296, 0.052, 0.697, 0.083, -0.113, 0.190], std: [0.160, 0.150, 0.250, 0.100, 0.490, 0.150, 0.250, 0.210, 0.050, 0.270, 0.110, 0.090, 0.120], n: 5 },
-        under_filled: { mean: [0.658, 0.652, 0.554, 0.407, 0.081, 0.847, 0.234, 0.422, 0.164, 0.673, 0.367, -0.223, 0.589], std: [0.190, 0.260, 0.200, 0.120, 0.440, 0.430, 0.360, 0.300, 0.200, 0.350, 0.180, 0.200, 0.240], n: 18 },
+        full_pump:    { mean: [0.823,0.645,0.757,0.141,-2.481,1.000,0.506,0.770,0.063,0.872,0.138,-0.164,0.341], std: [0.071,0.180,0.128,0.050,8.217,0.050,0.337,0.211,0.050,0.163,0.092,0.108,0.232], n: 7 },
+        pump_issue:   { mean: [0.743,0.617,0.715,0.162,0.906,0.914,0.459,0.636,0.073,0.785,0.130,-0.097,0.253], std: [0.208,0.236,0.183,0.050,0.229,0.211,0.347,0.316,0.050,0.275,0.110,0.061,0.149], n: 7 },
+        rod_part:     { mean: [0.446,0.179,0.155,0.119,-0.227,-0.146,0.026,0.001,0.481,0.266,0.626,-0.034,0.692], std: [0.115,0.138,0.092,0.075,0.484,0.656,0.071,0.099,0.253,0.050,0.322,0.114,0.259], n: 4 },
+        sv_leak:      { mean: [0.717,0.576,0.511,0.163,0.525,0.459,0.214,0.205,0.126,0.601,0.098,-0.173,0.246], std: [0.112,0.151,0.220,0.098,0.418,0.487,0.354,0.283,0.091,0.242,0.066,0.055,0.153], n: 7 },
+        tv_leak:      { mean: [0.748,0.426,0.761,0.062,0.435,0.833,0.108,0.260,0.069,0.552,0.131,-0.086,0.123], std: [0.121,0.079,0.282,0.050,0.431,0.373,0.108,0.131,0.083,0.217,0.100,0.086,0.083], n: 6 },
+        under_filled: { mean: [0.641,0.607,0.469,0.215,0.467,0.714,0.376,0.441,0.208,0.613,0.301,-0.212,0.610], std: [0.215,0.253,0.181,0.089,0.625,0.386,0.361,0.319,0.180,0.343,0.208,0.169,0.210], n: 25 },
     };
+
+    // -----------------------------------------------------------------------
+    // kNN Training Data — 56 XSPOC-classified wells (latest N-type DH card)
+    // -----------------------------------------------------------------------
+    // Format: [label_idx, aR, fT, fB, fP, sv, tv, cd, ab, dnE, upD, mdl, dnC, edl]
+    // Labels: 0=full_pump, 1=under_filled, 2=pump_issue, 3=sv_leak, 4=tv_leak, 5=rod_part
+    // kNN k=3 distance-weighted, dropping flatBottom(2) and upDropPt(9) → 66% 6-class LOO-CV
+    var KNN_TRAINING = [
+        [0,0.8856,0.7500,0.7551,0.1311,1.0000,1.0000,0.6807,0.5039,0.0285,0.9231,0.0816,-0.1361,0.2219],
+        [0,0.8293,0.7222,0.5789,0.1600,1.0000,1.0000,0.5338,0.6859,0.0690,0.8750,0.0877,-0.1317,0.2108],
+        [0,0.8255,0.8182,0.6893,0.1692,1.0000,1.0000,1.0000,1.0000,0.0599,1.0000,0.2136,-0.2648,0.5477],
+        [0,0.6586,0.2269,0.8795,0.1292,1.0000,1.0000,0.4556,1.0000,0.0811,0.4958,0.0964,-0.0831,0.1863],
+        [0,0.8283,0.6981,0.7500,0.1106,1.0000,1.0000,0.7902,0.6960,0.0337,0.9623,0.1667,-0.1568,0.3308],
+        [0,0.8566,0.6102,0.9881,0.0934,0.2280,1.0000,0.0816,0.5071,0.0529,0.8475,0.0119,-0.0105,0.0869],
+        [0,0.8768,0.6860,0.6552,0.1921,-22.598,1.0000,0.0000,1.0000,0.1179,1.0000,0.3103,-0.3644,0.8043],
+        [1,0.7261,0.5200,0.5385,0.3116,1.0000,0.2186,1.0000,0.0670,0.0758,0.4000,0.0769,-0.2666,0.4273],
+        [1,0.7166,0.5631,0.4747,0.1076,1.0000,1.0000,0.3517,0.3437,0.1088,0.8155,0.2323,-0.2636,0.5033],
+        [1,0.6662,0.9773,0.2759,0.4225,0.1896,1.0000,0.0530,0.3056,0.2353,1.0000,0.3103,-0.4638,0.8687],
+        [1,0.7873,0.8679,0.3061,0.1721,0.8958,0.5537,0.4032,0.0787,0.1247,0.9057,0.0204,-0.1541,0.2286],
+        [1,0.8389,0.7500,0.5943,0.1966,1.0000,1.0000,0.6365,1.0000,0.0948,1.0000,0.2264,-0.3241,0.6363],
+        [1,0.7739,0.6701,0.6190,0.1480,-1.5285,-0.0273,0.0693,0.2858,0.1468,0.2474,0.3429,-0.3628,0.8350],
+        [1,0.6601,0.9886,0.4474,0.1886,0.2803,0.4207,0.0617,0.1321,0.1877,1.0000,0.3246,-0.4294,0.7908],
+        [1,0.7948,0.6444,0.7193,0.2879,1.0000,1.0000,0.8206,0.8302,0.0368,0.4667,0.1754,-0.2163,0.3967],
+        [1,0.2270,0.6438,0.1395,0.2721,0.0954,1.0000,0.0603,0.5324,0.6765,0.2466,0.7519,0.1203,0.8700],
+        [1,0.5139,0.6139,0.2871,0.1891,-0.1367,0.1407,0.0672,0.1595,0.6825,0.2475,0.6634,0.2515,0.9483],
+        [1,0.7602,0.8272,0.5868,0.1639,1.0000,0.7599,0.3239,0.1484,0.0578,1.0000,0.0661,-0.2914,0.4104],
+        [1,0.6000,0.8600,0.2692,0.4484,-0.0610,1.0000,-0.0143,0.5300,0.2806,1.0000,0.3654,-0.3516,0.9195],
+        [1,0.5812,0.7053,0.5234,0.1552,-0.0344,0.6754,0.1233,0.3297,0.2426,0.2421,0.3364,-0.2774,0.8860],
+        [1,0.8338,0.8602,0.6789,0.1420,1.0000,1.0000,0.8874,0.8421,0.0705,1.0000,0.2294,-0.2306,0.5366],
+        [1,0.8631,0.7670,0.7374,0.1471,1.0000,1.0000,0.7627,1.0000,0.0342,1.0000,0.1616,-0.2494,0.4871],
+        [1,0.6870,0.3077,0.5079,0.2659,0.7511,0.4921,0.2141,0.1169,0.1316,0.2308,0.2540,-0.3946,0.6633],
+        [1,0.7603,0.7000,0.3654,0.2459,1.0000,1.0000,1.0000,0.8372,0.1472,1.0000,0.1731,-0.1947,0.5101],
+        [1,0.7865,0.6735,0.7170,0.3259,1.0000,1.0000,1.0000,0.7266,0.0897,1.0000,0.1698,-0.2290,0.5813],
+        [1,0.1624,0.0577,0.1400,0.2531,-0.1072,0.7222,0.0219,0.0285,0.3348,0.2500,0.7200,-0.1015,0.5643],
+        [1,0.4732,0.5300,0.5392,0.1100,-0.1339,-0.2975,0.1428,0.0060,0.3165,0.2500,0.4216,-0.2153,0.8348],
+        [1,0.5395,0.2115,0.2203,0.1389,-0.2560,0.1916,0.1160,0.4827,0.1829,0.2500,0.3729,-0.2970,0.5100],
+        [1,0.0108,0.0851,0.2727,0.1204,0.3353,1.0000,0.0312,0.2657,0.5721,0.2340,0.7091,0.1259,0.5543],
+        [1,0.7921,0.5761,0.6389,0.2086,1.0000,1.0000,0.8726,0.3821,0.1356,0.2500,0.1250,-0.2099,0.5567],
+        [1,0.7902,0.5500,0.5476,0.1738,1.0000,1.0000,0.2436,0.7050,0.1103,0.8000,0.0238,-0.0352,0.1415],
+        [1,0.6741,0.2150,0.5789,0.1760,0.3792,1.0000,0.1594,0.8791,0.1311,0.4860,0.2842,-0.2460,0.5989],
+        [2,0.7906,0.6909,0.6170,0.2568,1.0000,1.0000,0.1144,0.9825,0.1154,0.9091,0.0213,-0.0144,0.1765],
+        [2,0.8434,0.6518,0.9111,0.1435,1.0000,1.0000,0.4341,0.5259,0.0401,0.8929,0.0333,-0.0530,0.1406],
+        [2,0.8311,0.7600,0.7875,0.1415,1.0000,1.0000,0.7905,0.7013,0.0372,0.9900,0.1625,-0.1363,0.3530],
+        [2,0.8286,0.7732,0.7048,0.1113,1.0000,1.0000,0.9558,0.6268,0.0581,0.9691,0.1429,-0.1596,0.3439],
+        [2,0.2345,0.0741,0.5208,0.1638,1.0000,0.3957,0.0730,-0.0189,0.1057,0.2407,0.3542,-0.1308,0.1937],
+        [2,0.8405,0.5556,1.0000,0.1756,0.3452,1.0000,0.0943,1.0000,0.0287,0.4921,0.0256,-0.0194,0.0431],
+        [2,0.8305,0.8144,0.4667,0.1412,1.0000,1.0000,0.7528,0.6318,0.1230,1.0000,0.1714,-0.1653,0.5204],
+        [3,0.8039,0.7647,0.5686,0.2610,1.0000,1.0000,0.4271,0.4243,0.0709,0.4510,0.0980,-0.2305,0.3904],
+        [3,0.6792,0.6327,0.5849,0.1196,0.1260,-0.1460,0.0979,-0.1295,0.1089,0.8367,0.2075,-0.1961,0.0942],
+        [3,0.8146,0.4361,0.8696,0.0185,0.1126,1.0000,0.0196,0.3477,0.0372,0.7143,0.0145,-0.0820,0.0985],
+        [3,0.8097,0.8182,0.5825,0.1810,1.0000,1.0000,1.0000,0.7310,0.1153,1.0000,0.1553,-0.1594,0.5081],
+        [3,0.7735,0.4800,0.4608,0.0494,0.0962,-0.0081,0.0301,0.0187,0.0805,0.5600,0.0098,-0.2502,0.1465],
+        [3,0.4837,0.4685,0.0769,0.3044,1.0000,0.0335,-0.0540,0.0359,0.3361,0.2973,0.0879,-0.1195,0.3399],
+        [3,0.6549,0.4310,0.4318,0.2073,0.3403,0.3347,-0.0225,0.0060,0.1357,0.3448,0.1136,-0.1727,0.1458],
+        [4,0.8465,0.4526,0.8727,0.0905,1.0000,1.0000,0.3271,0.3987,0.0239,0.7263,0.0909,-0.0499,0.1077],
+        [4,0.8124,0.4452,0.8036,0.0429,0.3718,1.0000,0.0778,0.3123,0.0524,0.2466,0.1964,-0.0464,0.1670],
+        [4,0.8264,0.5591,0.7200,0.0737,1.0000,1.0000,0.1460,0.2178,0.0257,0.7244,0.0133,-0.1257,0.0880],
+        [4,0.8002,0.3381,1.0000,0.0364,0.2967,1.0000,0.0553,0.3155,0.0170,0.2446,0.0159,-0.0300,0.0059],
+        [4,0.7078,0.4371,1.0000,0.0383,0.0646,1.0000,-0.0049,0.3210,0.0406,0.6821,0.1765,-0.0039,0.0926],
+        [4,0.4949,0.3211,0.1720,0.0924,-0.1259,0.0000,0.0478,-0.0080,0.2531,0.6881,0.2903,-0.2589,0.2758],
+        [5,0.3142,0.1031,0.0857,0.0596,-0.8273,-0.7971,-0.0728,-0.0455,0.7879,0.2474,0.9333,0.1422,0.9402],
+        [5,0.3542,0.0825,0.0571,0.1015,-0.5713,-0.2416,0.0010,-0.0141,0.6687,0.2474,0.9429,-0.0111,0.8960],
+        [5,0.5864,0.4167,0.2925,0.0696,0.1751,0.9385,0.0542,0.1639,0.2834,0.2500,0.4245,-0.1234,0.6429],
+        [5,0.5303,0.1132,0.1837,0.2471,0.3175,-0.4828,0.1199,-0.1014,0.1839,0.3208,0.2041,-0.1449,0.2897],
+    ];
+    var KNN_LABELS = ['full_pump','under_filled','pump_issue','sv_leak','tv_leak','rod_part'];
+    // Feature indices to keep for kNN (dropping flatBottom=2, upDropPt=9)
+    var KNN_KEEP = [0,1,3,4,5,6,7,8,10,11,12];
+
+    // Precompute standardization params and standardized training data
+    var KNN_MEAN, KNN_STDDEV, KNN_STD_DATA;
+    (function () {
+        var n = KNN_TRAINING.length, nf = KNN_KEEP.length;
+        KNN_MEAN = new Array(nf);
+        KNN_STDDEV = new Array(nf);
+        for (var fi = 0; fi < nf; fi++) {
+            var idx = KNN_KEEP[fi] + 1; // +1 for label column
+            var sum = 0;
+            for (var i = 0; i < n; i++) sum += KNN_TRAINING[i][idx];
+            KNN_MEAN[fi] = sum / n;
+            var sumSq = 0;
+            for (var i = 0; i < n; i++) {
+                var d = KNN_TRAINING[i][idx] - KNN_MEAN[fi];
+                sumSq += d * d;
+            }
+            KNN_STDDEV[fi] = Math.max(0.05, Math.sqrt(sumSq / n));
+        }
+        KNN_STD_DATA = [];
+        for (var i = 0; i < n; i++) {
+            var row = new Array(nf);
+            for (var fi = 0; fi < nf; fi++) {
+                row[fi] = (KNN_TRAINING[i][KNN_KEEP[fi] + 1] - KNN_MEAN[fi]) / KNN_STDDEV[fi];
+            }
+            KNN_STD_DATA.push({ label: KNN_LABELS[KNN_TRAINING[i][0]], vec: row });
+        }
+    })();
 
     /**
      * Centroid-first hybrid classifier with physics overrides.
@@ -911,7 +1050,7 @@ const CardPatterns = (function () {
 
         var f = features;
 
-        // ── Step 1: Centroid classifier (primary) ──
+        // ── Step 1: kNN classifier (primary) + centroid (secondary reference) ──
         var fNames = ['areaRatio', 'flatTop', 'flatBottom', 'fluidPoundIdx',
                       'svTransition', 'tvTransition', 'cdSharpness', 'abSharpness',
                       'dnLoadElev', 'upDropPt', 'maxDropLoc', 'dnConvexity', 'earlyDnLoad'];
@@ -922,7 +1061,10 @@ const CardPatterns = (function () {
             fVec.push(val);
         }
 
-        // Compute normalized distance to each centroid
+        // Primary: kNN (k=3 distance-weighted, 11 features, 66% LOO-CV)
+        var knnResult = classifyKNN(fVec);
+
+        // Secondary: Centroid distance for reference and L2 sub-classification
         var centroidResults = [];
         var sumExp = 0;
         for (var cid in CENTROIDS) {
@@ -935,20 +1077,26 @@ const CardPatterns = (function () {
                 dist += d * d;
             }
             dist = Math.sqrt(dist);
-            // With 15K training samples, centroids are statistically robust.
-            // Small bonus for sample count to slightly favor well-represented conditions.
             var bonus = Math.log(Math.max(cent.n, 1) + 1) * 0.05;
             var score = -dist + bonus;
             var expScore = Math.exp(score);
             sumExp += expScore;
             centroidResults.push({ id: cid, dist: dist, score: score, expScore: expScore });
         }
-
-        // Softmax confidence
         for (var i = 0; i < centroidResults.length; i++) {
             centroidResults[i].confidence = sumExp > 0 ? centroidResults[i].expScore / sumExp : 0;
         }
         centroidResults.sort(function (a, b) { return b.confidence - a.confidence; });
+
+        // Merge kNN result into centroid results ordering:
+        // kNN primary goes first, then centroid alternatives
+        var knnPrimary = { id: knnResult.label, dist: 0, confidence: knnResult.confidence };
+        var mergedResults = [knnPrimary];
+        for (var i = 0; i < centroidResults.length; i++) {
+            if (centroidResults[i].id !== knnResult.label) {
+                mergedResults.push(centroidResults[i]);
+            }
+        }
 
         // ── Step 2: Physics overrides (only for unambiguous cases) ──
         var ar = f.areaRatio, ft = f.flatTop, fb = f.flatBottom;
@@ -1031,26 +1179,26 @@ const CardPatterns = (function () {
                 });
             }
 
-            // Add centroid results as alternatives (lower confidence)
-            for (var i = 0; i < Math.min(2, centroidResults.length); i++) {
-                if (centroidResults[i].id === override.id) continue;
+            // Add kNN/centroid alternatives (lower confidence)
+            for (var i = 0; i < Math.min(2, mergedResults.length); i++) {
+                if (mergedResults[i].id === override.id) continue;
                 var altPattern = null;
                 for (var p = 0; p < PATTERNS.length; p++) {
-                    if (PATTERNS[p].id === centroidResults[i].id) { altPattern = PATTERNS[p]; break; }
+                    if (PATTERNS[p].id === mergedResults[i].id) { altPattern = PATTERNS[p]; break; }
                 }
                 if (altPattern) {
                     results.push({
                         pattern: altPattern,
-                        confidence: Math.round(centroidResults[i].confidence * 50) / 100, // halved
-                        physicsRule: 'Statistical match (centroid). Overridden by physics rule.',
+                        confidence: Math.round(mergedResults[i].confidence * 50) / 100, // halved
+                        physicsRule: 'Statistical match. Overridden by physics rule.',
                         matchDetails: {},
                     });
                 }
             }
         } else {
-            // No override — use centroid results directly
-            for (var i = 0; i < Math.min(3, centroidResults.length); i++) {
-                var cid = centroidResults[i].id;
+            // No override — use kNN primary + centroid alternatives
+            for (var i = 0; i < Math.min(3, mergedResults.length); i++) {
+                var cid = mergedResults[i].id;
 
                 // Apply gas interference veto
                 if (cid === 'gas_interference' && gasVeto) {
@@ -1064,8 +1212,9 @@ const CardPatterns = (function () {
                 }
                 if (!pattern) continue;
 
-                var conf = Math.round(centroidResults[i].confidence * 100) / 100;
-                var reason = 'Nearest centroid match (distance=' + centroidResults[i].dist.toFixed(1) + ').';
+                var conf = Math.round(mergedResults[i].confidence * 100) / 100;
+                var reason = i === 0 ? 'kNN match (k=3, ' + (conf * 100).toFixed(0) + '% vote weight).'
+                                     : 'Centroid alternative (distance=' + (mergedResults[i].dist || 0).toFixed(1) + ').';
 
                 // Build data-rich physics reasoning for each condition
                 var lr = f._loadRange ? Math.round(f._loadRange) : '?';
