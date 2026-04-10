@@ -234,8 +234,9 @@ def classify(fvec):
 KNN_KEEP = [0, 1, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13]
 
 def classify_knn(fvec, all_wells, exclude_nid=None, k=3):
-    """kNN k=3 distance-weighted classifier (matches JS implementation).
-    No physics overrides — pure kNN with dsSmooth. 70% LOO-CV."""
+    """kNN k=3 distance-weighted hybrid classifier (matches JS implementation).
+    5-class voting (sv+tv merged to valve_leak) + svTrans heuristic split.
+    73% 5-class LOO-CV, 71% 6-class equivalent."""
     if fvec is None:
         return None
 
@@ -258,13 +259,20 @@ def classify_knn(fvec, all_wells, exclude_nid=None, k=3):
         dists.append((d, w['l1']))
     dists.sort(key=lambda x: x[0])
 
-    # Distance-weighted voting
+    # Distance-weighted voting — merge sv_leak + tv_leak into valve_leak
     from collections import defaultdict
     votes = defaultdict(float)
     for d, l1 in dists[:k]:
-        votes[l1] += 1.0 / (d + 0.01)
+        lbl = 'valve_leak' if l1 in ('sv_leak', 'tv_leak') else l1
+        votes[lbl] += 1.0 / (d + 0.01)
 
-    return max(votes, key=votes.get)
+    pred = max(votes, key=votes.get)
+
+    # Split valve_leak back into sv/tv using svTransition vs tvTransition
+    if pred == 'valve_leak':
+        pred = 'sv_leak' if fvec[4] > fvec[5] else 'tv_leak'
+
+    return pred
 
 
 def main():
