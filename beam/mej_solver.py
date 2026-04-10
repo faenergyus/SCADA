@@ -439,11 +439,17 @@ def compute_downhole_card_transfer_matrix(
     n_harm = min(n_harmonics, M // 2)
 
     # DFT of surface card
-    # Note: surface load is NOT negated. The transfer matrix T12 term adds
-    # elastic stretch in the wrong direction (pump stroke > surface stroke).
-    # This is corrected in post-processing by scaling the pump position to
-    # the physically correct stroke length (surface - elastic stretch).
-    # The loads from the non-negated version are correct (11.9% fleet RMSE).
+    #
+    # SIGN CONVENTION: The standard transfer matrix uses displacement u
+    # positive DOWNWARD (wave equation convention). Card position s is
+    # positive UPWARD (s = -u + const). This flips the coupling terms:
+    #   Standard:  u_pump = T11*u + T12*F,  F_pump = T21*u + T22*F
+    #   Card conv: s_pump = T11*s - T12*F,  F_pump = -T21*s + T22*F
+    #
+    # The sign flips on T12 and T21 are applied in the matrix multiply below.
+    # This correctly SUBTRACTS elastic stretch from position (pump stroke <
+    # surface stroke) and fixes the position-to-force coupling sign.
+    # Equivalent to the JS version's "negate input + negate output" approach.
     surf_pos_dft = np.fft.rfft(surf_pos)
     surf_load_dft = np.fft.rfft(surf_load)
 
@@ -459,9 +465,10 @@ def compute_downhole_card_transfer_matrix(
             f = surf_load_dft[n]
 
             if n == 0:
-                # DC: static stretch through each section
+                # DC: elastic stretch SUBTRACTS from card position
+                # (rod stretches → pump moves less than surface)
                 for sec in model['sections']:
-                    u += f * sec['length'] / sec['EA']
+                    u -= f * sec['length'] / sec['EA']
                 pump_pos_dft[0] = u
                 pump_load_dft[0] = f
                 continue
@@ -482,9 +489,11 @@ def compute_downhole_card_transfer_matrix(
                 sin_phi = np.sin(phi)
                 EA_kappa = EA_s * kappa
 
-                # Transfer matrix multiply
-                u_new = cos_phi * u + (sin_phi / EA_kappa) * f
-                f_new = -EA_kappa * sin_phi * u + cos_phi * f
+                # Transfer matrix multiply (card convention: T12 and T21 flipped)
+                # s_pump = T11*s - T12*F  (elastic stretch subtracted)
+                # F_pump = -T21*s + T22*F (position-force coupling flipped)
+                u_new = cos_phi * u - (sin_phi / EA_kappa) * f
+                f_new = EA_kappa * sin_phi * u + cos_phi * f
 
                 u = u_new
                 f = f_new
@@ -513,14 +522,9 @@ def compute_downhole_card_transfer_matrix(
         # Normalize position
         dh_pos = dh_disp - np.min(dh_disp)
 
-        # Note: The transfer matrix (without load negation) produces pump
-        # displacement that is slightly inflated (T12*F adds stretch instead
-        # of subtracting). This is most noticeable for fiberglass wells where
-        # T12 is large due to low EA. The LOAD values are correct (11.9% RMSE).
-        # Position correction is not applied because it requires knowing the
-        # actual Fo (which depends on fillage, which is what we're trying to
-        # determine). The card SHAPE is correct; only the position SCALE
-        # is inflated for low-EA wells.
+        # With card-convention sign correction (T12/T21 flipped), position
+        # now correctly reflects elastic stretch subtraction. Pump stroke
+        # should be less than surface stroke for all wells.
 
         # Net pump load = axial force - buoyant rod weight
         dh_load_net = dh_load - buoyant_rod_weight
