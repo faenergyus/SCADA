@@ -7,6 +7,8 @@
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script src="js/wave-equation.js?v=29"></script>
     <script src="js/card-patterns.js?v=29"></script>
     <script>
@@ -106,14 +108,43 @@
 
         <!-- Tabs -->
         <div class="flex border-b border-gray-700 mb-6 overflow-x-auto">
-            <div class="tab active whitespace-nowrap" data-tab="cards">Dyno Cards</div>
+            <div class="tab active whitespace-nowrap" data-tab="trends">Trends</div>
+            <div class="tab whitespace-nowrap" data-tab="cards">Dyno Cards</div>
             <div class="tab whitespace-nowrap" data-tab="analysis">Analysis</div>
             <div class="tab whitespace-nowrap" data-tab="wellinfo">Well Info</div>
             <div class="tab whitespace-nowrap" data-tab="alarms">Alarms</div>
         </div>
 
+        <!-- Tab: Trends -->
+        <div id="tab-trends">
+            <div class="flex flex-wrap items-center gap-3 mb-4">
+                <span class="text-sm text-gray-400">Range:</span>
+                <div id="trendRangeNav" class="flex flex-wrap gap-2">
+                    <button class="card-nav-btn" data-days="1">24h</button>
+                    <button class="card-nav-btn active" data-days="7">7 Days</button>
+                    <button class="card-nav-btn" data-days="30">30 Days</button>
+                    <button class="card-nav-btn" data-days="90">90 Days</button>
+                </div>
+                <span id="trendStatus" class="text-xs text-gray-500 ml-auto"></span>
+            </div>
+            <div class="info-card mb-4">
+                <div class="text-sm text-gray-400 mb-2">Runtime %</div>
+                <div style="height:220px; position:relative;"><canvas id="chartPctRun"></canvas></div>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div class="info-card">
+                    <div class="text-sm text-gray-400 mb-2">Peak Load (PPRL)</div>
+                    <div style="height:250px; position:relative;"><canvas id="chartPPRL"></canvas></div>
+                </div>
+                <div class="info-card">
+                    <div class="text-sm text-gray-400 mb-2">Min Load (MPRL)</div>
+                    <div style="height:250px; position:relative;"><canvas id="chartMPRL"></canvas></div>
+                </div>
+            </div>
+        </div>
+
         <!-- Tab: Dyno Cards -->
-        <div id="tab-cards">
+        <div id="tab-cards" class="hidden">
             <div class="flex flex-wrap items-center gap-3 mb-4">
                 <span class="text-sm text-gray-400">Card:</span>
                 <div id="cardNav" class="flex flex-wrap gap-2"></div>
@@ -236,6 +267,8 @@
         loadCards();
         loadAlarms();
         if (typeof loadWellNav === 'function') loadWellNav();
+        initTrendCharts();
+        loadTrends(7);
       }
     }
 
@@ -1429,12 +1462,108 @@
         }).join('');
     }
 
+    // ── Trends ──
+    var trendCharts = {};
+    var trendDays = 7;
+
+    function createTrendChart(canvasId, label, color, unit) {
+        var ctx = document.getElementById(canvasId).getContext('2d');
+        var chart = new Chart(ctx, {
+            type: 'line',
+            data: { datasets: [{ label: label, data: [], borderColor: color, backgroundColor: color + '18', borderWidth: 1.5, pointRadius: 0, pointHitRadius: 6, fill: true, tension: 0.2 }] },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                animation: { duration: 400 },
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#1f2937', borderColor: '#374151', borderWidth: 1,
+                        titleColor: '#9ca3af', bodyColor: '#e5e7eb',
+                        callbacks: {
+                            label: function(ctx) { return label + ': ' + ctx.parsed.y.toFixed(1) + ' ' + unit; }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: { tooltipFormat: 'MMM d, h:mm a' },
+                        ticks: { color: '#6b7280', maxTicksLimit: 8, font: { size: 11 } },
+                        grid: { color: '#1f2937' }
+                    },
+                    y: {
+                        ticks: { color: '#6b7280', font: { size: 11 } },
+                        grid: { color: '#1f2937' },
+                        title: { display: true, text: unit, color: '#6b7280', font: { size: 11 } }
+                    }
+                }
+            }
+        });
+        trendCharts[canvasId] = chart;
+        return chart;
+    }
+
+    function initTrendCharts() {
+        createTrendChart('chartPctRun', 'Runtime', '#22c55e', '%');
+        createTrendChart('chartPPRL', 'Peak Load', '#c8a951', 'lbs');
+        createTrendChart('chartMPRL', 'Min Load', '#3b82f6', 'lbs');
+    }
+
+    async function loadTrends(days) {
+        if (!API_BASE || !AUTH_TOKEN) {
+            document.getElementById('trendStatus').textContent = 'API not available';
+            return;
+        }
+        trendDays = days;
+        document.getElementById('trendStatus').textContent = 'Loading...';
+
+        try {
+            var url = API_BASE + '/history/' + encodeURIComponent(NODE_ID) + '?days=' + days + '&params=PctRun,PPRL,MPRL';
+            var resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + AUTH_TOKEN } });
+            if (resp.status === 401) {
+                document.getElementById('trendStatus').textContent = 'Session expired — sign in again';
+                signOut();
+                return;
+            }
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            var data = await resp.json();
+
+            var paramMap = { 'PctRun': 'chartPctRun', 'PPRL': 'chartPPRL', 'MPRL': 'chartMPRL' };
+            var totalPts = 0;
+            for (var pname in paramMap) {
+                var chart = trendCharts[paramMap[pname]];
+                if (!chart) continue;
+                var pdata = data.params[pname];
+                if (pdata && pdata.data) {
+                    chart.data.datasets[0].data = pdata.data.map(function(pt) { return { x: pt[0], y: pt[1] }; });
+                    totalPts += pdata.data.length;
+                } else {
+                    chart.data.datasets[0].data = [];
+                }
+                chart.update('none');
+            }
+            document.getElementById('trendStatus').textContent = totalPts.toLocaleString() + ' points loaded';
+        } catch(e) {
+            document.getElementById('trendStatus').textContent = 'Failed: ' + e.message;
+        }
+    }
+
+    // Range button clicks
+    document.querySelectorAll('#trendRangeNav button').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('#trendRangeNav button').forEach(function(b) { b.classList.remove('active'); });
+            btn.classList.add('active');
+            loadTrends(parseInt(btn.dataset.days));
+        });
+    });
+
     // ── Tabs ──
     document.querySelectorAll('.tab').forEach(function(tab) {
         tab.addEventListener('click', function() {
             document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
             tab.classList.add('active');
-            ['cards', 'analysis', 'wellinfo', 'alarms'].forEach(function(id) {
+            ['trends', 'cards', 'analysis', 'wellinfo', 'alarms'].forEach(function(id) {
                 document.getElementById('tab-' + id).classList.toggle('hidden', id !== tab.dataset.tab);
             });
         });
