@@ -671,6 +671,33 @@ const CardPatterns = (function () {
             earlyDnLoad = eSum / eThird;
         }
 
+        // Downstroke smoothness: std of load differences where position decreases
+        // Uses sequential scan (not formal downstroke segment) — captures all
+        // decreasing-position load behavior including reversals.
+        // High = rough/irregular (under_filled, rod issues), Low = smooth (full pump)
+        var dsSmooth = 0;
+        var dsLoads = [];
+        for (var i = 1; i < N; i++) {
+            if (normPos[i] < normPos[i - 1]) {
+                dsLoads.push(normLoad[i]);
+            }
+        }
+        if (dsLoads.length > 3) {
+            var dsDiffs = [];
+            for (var k = 0; k < dsLoads.length - 1; k++) {
+                dsDiffs.push(dsLoads[k + 1] - dsLoads[k]);
+            }
+            var dsMean = 0;
+            for (var k = 0; k < dsDiffs.length; k++) dsMean += dsDiffs[k];
+            dsMean /= dsDiffs.length;
+            var dsVar = 0;
+            for (var k = 0; k < dsDiffs.length; k++) {
+                var dd = dsDiffs[k] - dsMean;
+                dsVar += dd * dd;
+            }
+            dsSmooth = Math.sqrt(dsVar / dsDiffs.length);
+        }
+
         return {
             areaRatio: areaRatio,
             loadRange: loadRangeRatio,
@@ -696,6 +723,7 @@ const CardPatterns = (function () {
             maxDropLoc: maxDropLoc,
             dnConvexity: dnConvexity,
             earlyDnLoad: earlyDnLoad,
+            dsSmooth: dsSmooth,
             // Raw stats for display
             _minLoad: minLoad,
             _maxLoad: maxLoad,
@@ -833,10 +861,10 @@ const CardPatterns = (function () {
 
     /**
      * kNN classifier (k=3, distance-weighted, standardized features).
-     * Uses 11 features (drops flatBottom and upDropPt which hurt accuracy).
-     * Trained on 56 XSPOC-classified wells. 66% 6-class LOO-CV accuracy.
+     * Uses 12 features (drops flatBottom and upDropPt, adds dsSmooth).
+     * Trained on 55 XSPOC-classified wells. 70% 6-class LOO-CV accuracy.
      *
-     * @param {Array} fVec - 13-element feature vector from extractFeatures
+     * @param {Array} fVec - 14-element feature vector from extractFeatures
      * @returns {Object} { label, confidence, neighbors }
      */
     function classifyKNN(fVec) {
@@ -928,72 +956,72 @@ const CardPatterns = (function () {
     };
 
     // -----------------------------------------------------------------------
-    // kNN Training Data — 56 XSPOC-classified wells (latest N-type DH card)
+    // kNN Training Data — 55 XSPOC-classified wells (latest N-type DH card)
     // -----------------------------------------------------------------------
-    // Format: [label_idx, aR, fT, fB, fP, sv, tv, cd, ab, dnE, upD, mdl, dnC, edl]
+    // Format: [label_idx, aR, fT, fB, fP, sv, tv, cd, ab, dnE, upD, mdl, dnC, edl, dsSmooth]
     // Labels: 0=full_pump, 1=under_filled, 2=pump_issue, 3=sv_leak, 4=tv_leak, 5=rod_part
-    // kNN k=3 distance-weighted, dropping flatBottom(2) and upDropPt(9) → 66% 6-class LOO-CV
+    // kNN k=3 distance-weighted, dropping flatBottom(2) and upDropPt(9), adding dsSmooth(13)
+    // No physics overrides. 70% 6-class LOO-CV accuracy.
     var KNN_TRAINING = [
-        [0,0.8856,0.7500,0.7551,0.1311,1.0000,1.0000,0.6807,0.5039,0.0285,0.9231,0.0816,-0.1361,0.2219],
-        [0,0.8293,0.7222,0.5789,0.1600,1.0000,1.0000,0.5338,0.6859,0.0690,0.8750,0.0877,-0.1317,0.2108],
-        [0,0.8255,0.8182,0.6893,0.1692,1.0000,1.0000,1.0000,1.0000,0.0599,1.0000,0.2136,-0.2648,0.5477],
-        [0,0.6586,0.2269,0.8795,0.1292,1.0000,1.0000,0.4556,1.0000,0.0811,0.4958,0.0964,-0.0831,0.1863],
-        [0,0.8283,0.6981,0.7500,0.1106,1.0000,1.0000,0.7902,0.6960,0.0337,0.9623,0.1667,-0.1568,0.3308],
-        [0,0.8566,0.6102,0.9881,0.0934,0.2280,1.0000,0.0816,0.5071,0.0529,0.8475,0.0119,-0.0105,0.0869],
-        [0,0.8768,0.6860,0.6552,0.1921,-22.598,1.0000,0.0000,1.0000,0.1179,1.0000,0.3103,-0.3644,0.8043],
-        [1,0.7261,0.5200,0.5385,0.3116,1.0000,0.2186,1.0000,0.0670,0.0758,0.4000,0.0769,-0.2666,0.4273],
-        [1,0.7166,0.5631,0.4747,0.1076,1.0000,1.0000,0.3517,0.3437,0.1088,0.8155,0.2323,-0.2636,0.5033],
-        [1,0.6662,0.9773,0.2759,0.4225,0.1896,1.0000,0.0530,0.3056,0.2353,1.0000,0.3103,-0.4638,0.8687],
-        [1,0.7873,0.8679,0.3061,0.1721,0.8958,0.5537,0.4032,0.0787,0.1247,0.9057,0.0204,-0.1541,0.2286],
-        [1,0.8389,0.7500,0.5943,0.1966,1.0000,1.0000,0.6365,1.0000,0.0948,1.0000,0.2264,-0.3241,0.6363],
-        [1,0.7739,0.6701,0.6190,0.1480,-1.5285,-0.0273,0.0693,0.2858,0.1468,0.2474,0.3429,-0.3628,0.8350],
-        [1,0.6601,0.9886,0.4474,0.1886,0.2803,0.4207,0.0617,0.1321,0.1877,1.0000,0.3246,-0.4294,0.7908],
-        [1,0.7948,0.6444,0.7193,0.2879,1.0000,1.0000,0.8206,0.8302,0.0368,0.4667,0.1754,-0.2163,0.3967],
-        [1,0.2270,0.6438,0.1395,0.2721,0.0954,1.0000,0.0603,0.5324,0.6765,0.2466,0.7519,0.1203,0.8700],
-        [1,0.5139,0.6139,0.2871,0.1891,-0.1367,0.1407,0.0672,0.1595,0.6825,0.2475,0.6634,0.2515,0.9483],
-        [1,0.7602,0.8272,0.5868,0.1639,1.0000,0.7599,0.3239,0.1484,0.0578,1.0000,0.0661,-0.2914,0.4104],
-        [1,0.6000,0.8600,0.2692,0.4484,-0.0610,1.0000,-0.0143,0.5300,0.2806,1.0000,0.3654,-0.3516,0.9195],
-        [1,0.5812,0.7053,0.5234,0.1552,-0.0344,0.6754,0.1233,0.3297,0.2426,0.2421,0.3364,-0.2774,0.8860],
-        [1,0.8338,0.8602,0.6789,0.1420,1.0000,1.0000,0.8874,0.8421,0.0705,1.0000,0.2294,-0.2306,0.5366],
-        [1,0.8631,0.7670,0.7374,0.1471,1.0000,1.0000,0.7627,1.0000,0.0342,1.0000,0.1616,-0.2494,0.4871],
-        [1,0.6870,0.3077,0.5079,0.2659,0.7511,0.4921,0.2141,0.1169,0.1316,0.2308,0.2540,-0.3946,0.6633],
-        [1,0.7603,0.7000,0.3654,0.2459,1.0000,1.0000,1.0000,0.8372,0.1472,1.0000,0.1731,-0.1947,0.5101],
-        [1,0.7865,0.6735,0.7170,0.3259,1.0000,1.0000,1.0000,0.7266,0.0897,1.0000,0.1698,-0.2290,0.5813],
-        [1,0.1624,0.0577,0.1400,0.2531,-0.1072,0.7222,0.0219,0.0285,0.3348,0.2500,0.7200,-0.1015,0.5643],
-        [1,0.4732,0.5300,0.5392,0.1100,-0.1339,-0.2975,0.1428,0.0060,0.3165,0.2500,0.4216,-0.2153,0.8348],
-        [1,0.5395,0.2115,0.2203,0.1389,-0.2560,0.1916,0.1160,0.4827,0.1829,0.2500,0.3729,-0.2970,0.5100],
-        [1,0.0108,0.0851,0.2727,0.1204,0.3353,1.0000,0.0312,0.2657,0.5721,0.2340,0.7091,0.1259,0.5543],
-        [1,0.7921,0.5761,0.6389,0.2086,1.0000,1.0000,0.8726,0.3821,0.1356,0.2500,0.1250,-0.2099,0.5567],
-        [1,0.7902,0.5500,0.5476,0.1738,1.0000,1.0000,0.2436,0.7050,0.1103,0.8000,0.0238,-0.0352,0.1415],
-        [1,0.6741,0.2150,0.5789,0.1760,0.3792,1.0000,0.1594,0.8791,0.1311,0.4860,0.2842,-0.2460,0.5989],
-        [2,0.7906,0.6909,0.6170,0.2568,1.0000,1.0000,0.1144,0.9825,0.1154,0.9091,0.0213,-0.0144,0.1765],
-        [2,0.8434,0.6518,0.9111,0.1435,1.0000,1.0000,0.4341,0.5259,0.0401,0.8929,0.0333,-0.0530,0.1406],
-        [2,0.8311,0.7600,0.7875,0.1415,1.0000,1.0000,0.7905,0.7013,0.0372,0.9900,0.1625,-0.1363,0.3530],
-        [2,0.8286,0.7732,0.7048,0.1113,1.0000,1.0000,0.9558,0.6268,0.0581,0.9691,0.1429,-0.1596,0.3439],
-        [2,0.2345,0.0741,0.5208,0.1638,1.0000,0.3957,0.0730,-0.0189,0.1057,0.2407,0.3542,-0.1308,0.1937],
-        [2,0.8405,0.5556,1.0000,0.1756,0.3452,1.0000,0.0943,1.0000,0.0287,0.4921,0.0256,-0.0194,0.0431],
-        [2,0.8305,0.8144,0.4667,0.1412,1.0000,1.0000,0.7528,0.6318,0.1230,1.0000,0.1714,-0.1653,0.5204],
-        [3,0.8039,0.7647,0.5686,0.2610,1.0000,1.0000,0.4271,0.4243,0.0709,0.4510,0.0980,-0.2305,0.3904],
-        [3,0.6792,0.6327,0.5849,0.1196,0.1260,-0.1460,0.0979,-0.1295,0.1089,0.8367,0.2075,-0.1961,0.0942],
-        [3,0.8146,0.4361,0.8696,0.0185,0.1126,1.0000,0.0196,0.3477,0.0372,0.7143,0.0145,-0.0820,0.0985],
-        [3,0.8097,0.8182,0.5825,0.1810,1.0000,1.0000,1.0000,0.7310,0.1153,1.0000,0.1553,-0.1594,0.5081],
-        [3,0.7735,0.4800,0.4608,0.0494,0.0962,-0.0081,0.0301,0.0187,0.0805,0.5600,0.0098,-0.2502,0.1465],
-        [3,0.4837,0.4685,0.0769,0.3044,1.0000,0.0335,-0.0540,0.0359,0.3361,0.2973,0.0879,-0.1195,0.3399],
-        [3,0.6549,0.4310,0.4318,0.2073,0.3403,0.3347,-0.0225,0.0060,0.1357,0.3448,0.1136,-0.1727,0.1458],
-        [4,0.8465,0.4526,0.8727,0.0905,1.0000,1.0000,0.3271,0.3987,0.0239,0.7263,0.0909,-0.0499,0.1077],
-        [4,0.8124,0.4452,0.8036,0.0429,0.3718,1.0000,0.0778,0.3123,0.0524,0.2466,0.1964,-0.0464,0.1670],
-        [4,0.8264,0.5591,0.7200,0.0737,1.0000,1.0000,0.1460,0.2178,0.0257,0.7244,0.0133,-0.1257,0.0880],
-        [4,0.8002,0.3381,1.0000,0.0364,0.2967,1.0000,0.0553,0.3155,0.0170,0.2446,0.0159,-0.0300,0.0059],
-        [4,0.7078,0.4371,1.0000,0.0383,0.0646,1.0000,-0.0049,0.3210,0.0406,0.6821,0.1765,-0.0039,0.0926],
-        [4,0.4949,0.3211,0.1720,0.0924,-0.1259,0.0000,0.0478,-0.0080,0.2531,0.6881,0.2903,-0.2589,0.2758],
-        [5,0.3142,0.1031,0.0857,0.0596,-0.8273,-0.7971,-0.0728,-0.0455,0.7879,0.2474,0.9333,0.1422,0.9402],
-        [5,0.3542,0.0825,0.0571,0.1015,-0.5713,-0.2416,0.0010,-0.0141,0.6687,0.2474,0.9429,-0.0111,0.8960],
-        [5,0.5864,0.4167,0.2925,0.0696,0.1751,0.9385,0.0542,0.1639,0.2834,0.2500,0.4245,-0.1234,0.6429],
-        [5,0.5303,0.1132,0.1837,0.2471,0.3175,-0.4828,0.1199,-0.1014,0.1839,0.3208,0.2041,-0.1449,0.2897],
+        [0,0.6586,0.2269,0.8795,0.1292,1.0000,1.0000,0.4556,1.0000,0.0811,0.4958,0.0964,-0.0831,0.1863,0.0680],
+        [0,0.8566,0.6102,0.9881,0.0934,0.2280,1.0000,0.0816,0.5071,0.0529,0.8475,0.0119,-0.0105,0.0869,0.0040],
+        [0,0.8856,0.7500,0.7551,0.1311,1.0000,1.0000,0.6807,0.5039,0.0285,0.9231,0.0816,-0.1361,0.2219,0.0344],
+        [0,0.8293,0.7222,0.5789,0.1600,1.0000,1.0000,0.5338,0.6859,0.0690,0.8750,0.0877,-0.1317,0.2108,0.0318],
+        [0,0.7603,0.7000,0.3654,0.2459,1.0000,1.0000,1.0000,0.8372,0.1472,1.0000,0.1731,-0.1947,0.5101,0.0928],
+        [0,0.8768,0.6860,0.6552,0.1921,-22.5980,1.0000,0.0000,1.0000,0.1179,1.0000,0.3103,-0.3644,0.8043,0.0310],
+        [1,0.4732,0.5300,0.5392,0.1100,-0.1339,-0.2975,0.1428,0.0060,0.3165,0.2500,0.4216,-0.2153,0.8348,0.0122],
+        [1,0.7739,0.6701,0.6190,0.1480,-1.5285,-0.0273,0.0693,0.2858,0.1468,0.2474,0.3429,-0.3628,0.8350,0.0252],
+        [1,0.6601,0.9886,0.4474,0.1886,0.2803,0.4207,0.0617,0.1321,0.1877,1.0000,0.3246,-0.4294,0.7908,0.0309],
+        [1,0.7948,0.6444,0.7193,0.2879,1.0000,1.0000,0.8206,0.8302,0.0368,0.4667,0.1754,-0.2163,0.3967,0.0706],
+        [1,0.7261,0.5200,0.5385,0.3116,1.0000,0.2186,1.0000,0.0670,0.0758,0.4000,0.0769,-0.2666,0.4273,0.0510],
+        [1,0.7166,0.5631,0.4747,0.1076,1.0000,1.0000,0.3517,0.3437,0.1088,0.8155,0.2323,-0.2636,0.5033,0.0715],
+        [1,0.6662,0.9773,0.2759,0.4225,0.1896,1.0000,0.0530,0.3056,0.2353,1.0000,0.3103,-0.4638,0.8687,0.0654],
+        [1,0.7873,0.8679,0.3061,0.1721,0.8958,0.5537,0.4032,0.0787,0.1247,0.9057,0.0204,-0.1541,0.2286,0.0776],
+        [1,0.8389,0.7500,0.5943,0.1966,1.0000,1.0000,0.6365,1.0000,0.0948,1.0000,0.2264,-0.3241,0.6363,0.0621],
+        [1,0.2270,0.6438,0.1395,0.2721,0.0954,1.0000,0.0603,0.5324,0.6765,0.2466,0.7519,0.1203,0.8700,0.0894],
+        [1,0.5139,0.6139,0.2871,0.1891,-0.1367,0.1407,0.0672,0.1595,0.6825,0.2475,0.6634,0.2515,0.9483,0.0747],
+        [1,0.7662,0.8293,0.5917,0.1521,1.0000,0.7865,0.3331,0.0992,0.0547,1.0000,0.0583,-0.2836,0.3829,0.0431],
+        [1,0.5395,0.2115,0.2203,0.1389,-0.2560,0.1916,0.1160,0.4827,0.1829,0.2500,0.3729,-0.2970,0.5100,0.0279],
+        [1,0.0108,0.0851,0.2727,0.1204,0.3353,1.0000,0.0312,0.2657,0.5721,0.2340,0.7091,0.1259,0.5543,0.0299],
+        [1,0.6000,0.8600,0.2692,0.4484,-0.0610,1.0000,-0.0143,0.5300,0.2806,1.0000,0.3654,-0.3516,0.9195,0.0851],
+        [1,0.5812,0.7053,0.5234,0.1552,-0.0344,0.6754,0.1233,0.3297,0.2426,0.2421,0.3364,-0.2774,0.8860,0.0965],
+        [1,0.8338,0.8602,0.6789,0.1420,1.0000,1.0000,0.8874,0.8421,0.0705,1.0000,0.2294,-0.2306,0.5366,0.0718],
+        [1,0.7991,0.7647,0.6800,0.1462,1.0000,1.0000,0.9844,0.9516,0.0892,1.0000,0.1400,-0.1854,0.4923,0.0956],
+        [1,0.6870,0.3077,0.5079,0.2659,0.7511,0.4921,0.2141,0.1169,0.1316,0.2308,0.2540,-0.3946,0.6633,0.0512],
+        [1,0.1624,0.0577,0.1400,0.2531,-0.1072,0.7222,0.0219,0.0285,0.3348,0.2500,0.7200,-0.1015,0.5643,0.0403],
+        [1,0.7902,0.5500,0.5476,0.1738,1.0000,1.0000,0.2436,0.7050,0.1103,0.8000,0.0238,-0.0352,0.1415,0.0668],
+        [1,0.6741,0.2150,0.5789,0.1760,0.3792,1.0000,0.1594,0.8791,0.1311,0.4860,0.2842,-0.2460,0.5989,0.0190],
+        [2,0.7906,0.6909,0.6170,0.2568,1.0000,1.0000,0.1144,0.9825,0.1154,0.9091,0.0213,-0.0144,0.1765,0.0325],
+        [2,0.8223,0.7129,0.7525,0.1099,1.0000,1.0000,1.0000,0.7085,0.0510,0.9604,0.1386,-0.1453,0.3236,0.0492],
+        [2,0.8283,0.6981,0.7500,0.1106,1.0000,1.0000,0.7902,0.6960,0.0337,0.9623,0.1667,-0.1568,0.3308,0.0531],
+        [2,0.2345,0.0741,0.5208,0.1638,1.0000,0.3957,0.0730,-0.0189,0.1057,0.2407,0.3542,-0.1308,0.1937,0.0438],
+        [2,0.7362,0.5733,0.4302,0.1157,-0.0150,0.2324,0.0725,0.0638,0.2014,0.6800,0.0116,-0.1871,0.0980,0.0925],
+        [2,0.8405,0.5556,1.0000,0.1756,0.3452,1.0000,0.0943,1.0000,0.0287,0.4921,0.0256,-0.0194,0.0431,0.0109],
+        [2,0.8518,0.8500,0.7059,0.1741,1.0000,1.0000,1.0000,1.0000,0.0456,1.0000,0.2157,-0.2634,0.5474,0.0193],
+        [2,0.8311,0.7600,0.7875,0.1415,1.0000,1.0000,0.7905,0.7013,0.0372,0.9900,0.1625,-0.1363,0.3530,0.0900],
+        [2,0.8305,0.8144,0.4667,0.1412,1.0000,1.0000,0.7528,0.6318,0.1230,1.0000,0.1714,-0.1653,0.5204,0.0145],
+        [3,0.8039,0.7647,0.5686,0.2610,1.0000,1.0000,0.4271,0.4243,0.0709,0.4510,0.0980,-0.2305,0.3904,0.0523],
+        [3,0.6792,0.6327,0.5849,0.1196,0.1260,-0.1460,0.0979,-0.1295,0.1089,0.8367,0.2075,-0.1961,0.0942,0.1261],
+        [3,0.7735,0.4800,0.4608,0.0494,0.0962,-0.0081,0.0301,0.0187,0.0805,0.5600,0.0098,-0.2502,0.1465,0.0766],
+        [3,0.8146,0.4361,0.8696,0.0185,0.1126,1.0000,0.0196,0.3477,0.0372,0.7143,0.0145,-0.0820,0.0985,0.0610],
+        [3,0.8097,0.8182,0.5825,0.1810,1.0000,1.0000,1.0000,0.7310,0.1153,1.0000,0.1553,-0.1594,0.5081,0.0172],
+        [3,0.4837,0.4685,0.0769,0.3044,1.0000,0.0335,-0.0540,0.0359,0.3361,0.2973,0.0879,-0.1195,0.3399,0.0380],
+        [3,0.6549,0.4310,0.4318,0.2073,0.3403,0.3347,-0.0225,0.0060,0.1357,0.3448,0.1136,-0.1727,0.1458,0.0759],
+        [4,0.8002,0.3381,1.0000,0.0364,0.2967,1.0000,0.0553,0.3155,0.0170,0.2446,0.0159,-0.0300,0.0059,0.0140],
+        [4,0.7078,0.4371,1.0000,0.0383,0.0646,1.0000,-0.0049,0.3210,0.0406,0.6821,0.1765,-0.0039,0.0926,0.1092],
+        [4,0.8124,0.4452,0.8036,0.0429,0.3718,1.0000,0.0778,0.3123,0.0524,0.2466,0.1964,-0.0464,0.1670,0.0410],
+        [4,0.8264,0.5591,0.7200,0.0737,1.0000,1.0000,0.1460,0.2178,0.0257,0.7244,0.0133,-0.1257,0.0880,0.0093],
+        [4,0.8465,0.4526,0.8727,0.0905,1.0000,1.0000,0.3271,0.3987,0.0239,0.7263,0.0909,-0.0499,0.1077,0.0189],
+        [4,0.8434,0.6518,0.9111,0.1435,1.0000,1.0000,0.4341,0.5259,0.0401,0.8929,0.0333,-0.0530,0.1406,0.0354],
+        [4,0.4949,0.3211,0.1720,0.0924,-0.1259,0.0000,0.0478,-0.0080,0.2531,0.6881,0.2903,-0.2589,0.2758,0.0553],
+        [5,0.3142,0.1031,0.0857,0.0596,-0.8273,-0.7971,-0.0728,-0.0455,0.7879,0.2474,0.9333,0.1422,0.9402,0.0078],
+        [5,0.3542,0.0825,0.0571,0.1015,-0.5713,-0.2416,0.0010,-0.0141,0.6687,0.2474,0.9429,-0.0111,0.8960,0.0135],
+        [5,0.5864,0.4167,0.2925,0.0696,0.1751,0.9385,0.0542,0.1639,0.2834,0.2500,0.4245,-0.1234,0.6429,0.0313],
+        [5,0.5303,0.1132,0.1837,0.2471,0.3175,-0.4828,0.1199,-0.1014,0.1839,0.3208,0.2041,-0.1449,0.2897,0.0482],
     ];
     var KNN_LABELS = ['full_pump','under_filled','pump_issue','sv_leak','tv_leak','rod_part'];
-    // Feature indices to keep for kNN (dropping flatBottom=2, upDropPt=9)
-    var KNN_KEEP = [0,1,3,4,5,6,7,8,10,11,12];
+    // Feature indices to keep for kNN (dropping flatBottom=2, upDropPt=9; adding dsSmooth=13)
+    var KNN_KEEP = [0,1,3,4,5,6,7,8,10,11,12,13];
 
     // Precompute standardization params and standardized training data
     var KNN_MEAN, KNN_STDDEV, KNN_STD_DATA;
@@ -1053,7 +1081,8 @@ const CardPatterns = (function () {
         // ── Step 1: kNN classifier (primary) + centroid (secondary reference) ──
         var fNames = ['areaRatio', 'flatTop', 'flatBottom', 'fluidPoundIdx',
                       'svTransition', 'tvTransition', 'cdSharpness', 'abSharpness',
-                      'dnLoadElev', 'upDropPt', 'maxDropLoc', 'dnConvexity', 'earlyDnLoad'];
+                      'dnLoadElev', 'upDropPt', 'maxDropLoc', 'dnConvexity', 'earlyDnLoad',
+                      'dsSmooth'];
         var fVec = [];
         for (var fi = 0; fi < fNames.length; fi++) {
             var val = f[fNames[fi]];
@@ -1061,7 +1090,7 @@ const CardPatterns = (function () {
             fVec.push(val);
         }
 
-        // Primary: kNN (k=3 distance-weighted, 11 features, 66% LOO-CV)
+        // Primary: kNN (k=3 distance-weighted, 12 features, 70% LOO-CV)
         var knnResult = classifyKNN(fVec);
 
         // Secondary: Centroid distance for reference and L2 sub-classification
@@ -1071,7 +1100,8 @@ const CardPatterns = (function () {
             if (!CENTROIDS.hasOwnProperty(cid)) continue;
             var cent = CENTROIDS[cid];
             var dist = 0;
-            for (var i = 0; i < fVec.length; i++) {
+            var cLen = Math.min(fVec.length, cent.mean.length); // centroids are 13-feature
+            for (var i = 0; i < cLen; i++) {
                 var std = Math.max(cent.std[i], 0.05);
                 var d = (fVec[i] - cent.mean[i]) / std;
                 dist += d * d;
@@ -1098,105 +1128,25 @@ const CardPatterns = (function () {
             }
         }
 
-        // ── Step 2: Physics overrides (only for unambiguous cases) ──
+        // ── Step 2: Gas interference veto ──
+        // Physics overrides removed (v2) — kNN with dsSmooth handles all L1
+        // classes better without overrides (70% vs 62% with overrides).
+        // Only gas interference veto retained: sharp A-B rules out gas.
         var ar = f.areaRatio, ft = f.flatTop, fb = f.flatBottom;
         var ab = f.abSharpness, cd = f.cdSharpness, dnE = f.dnLoadElev;
         var maxDropLoc = f.maxDropLoc || 0, earlyDn = f.earlyDnLoad || 0;
         var override = null;
 
-        // Override A: Rod part — tiny flat card, no pump action
-        if (ar < 0.20 && ft < 0.25 && fb < 0.25) {
-            override = {
-                id: 'rod_part', confidence: 0.95,
-                reason: 'Card area ' + ar.toFixed(2) + ' — near-flat, minimal load variation. Rod string parted or sensor failure. (Published: rod part card is small flat loop.)'
-            };
-        }
-
-        // Override B: Gas lock — card collapsed to sliver/figure-8
-        if (ar < 0.15 && !override) {
-            override = {
-                id: 'gas_lock', confidence: 0.90,
-                reason: 'Card collapsed to ' + ar.toFixed(2) + ' area. Neither valve can open — gas compresses and expands without transferring fluid. (Published: gas lock = tiny ellipse.)'
-            };
-        }
-
-        // Override C: Full pump — rectangular card with sharp transitions
-        // Published (Echometer, EngineerFix): "ideal pump card approaches perfect
-        // rectangle." Sharp C-D (cd > 0.70) + flat top (ft > 0.70) + late upstroke
-        // drop (upD > 0.90) = pump filling completely each stroke.
-        // Data: full pump wells have cd=0.87, ft=0.77, upD=0.98 (snapshot centroids)
-        var upD = f.upDropPt || 1.0;
-        if (!override && ar > 0.78 && ft > 0.68 && cd > 0.65 && upD > 0.88) {
-            override = {
-                id: 'full_pump', confidence: 0.85,
-                reason: 'Rectangular card: area ' + (ar * 100).toFixed(0) + '%, flat top ' +
-                    (ft * 100).toFixed(0) + '%, sharp C-D (' + cd.toFixed(2) +
-                    '), load held until ' + (upD * 100).toFixed(0) + '% of upstroke. ' +
-                    '(Published: ideal pump card approaches perfect rectangle with vertical transitions.)'
-            };
-        }
-
-        // Override D: TV leak — rounded corners + DECLINING upstroke load
-        // Published: "TV leak = upper corners rounded off, load falls during upstroke"
-        // Key distinction from gas interference: TV leak has DECLINING upstroke
-        // (fluid escaping through TV) while gas interference has flat/rising upstroke.
-        // Data: TV leak upD=0.59 (load drops early), gas/FP upD=0.67 (load held longer)
-        // Also: TV leak has higher flatBottom (0.63) — downstroke is relatively normal.
-        if (!override && cd < 0.15 && ab < 0.30 && ft < 0.52 && ar > 0.50 && upD < 0.65 && fb > 0.40) {
-            override = {
-                id: 'tv_leak', confidence: 0.75,
-                reason: 'Both upper corners rounded: C-D=' + cd.toFixed(2) +
-                    ', A-B=' + ab.toFixed(2) + '. Load drops at ' + (upD * 100).toFixed(0) +
-                    '% of upstroke (early decline = TV leak). Flat bottom=' + (fb * 100).toFixed(0) +
-                    '% (normal downstroke). ' +
-                    '(Published: TV leak = upper corners rounded, load falls during upstroke.)'
-            };
-        }
-
         // Gas interference VETO — sharp A-B rules out gas
         // Published (Downhole Diagnostic, EngineerFix, Echometer): "Gas acts as
         // a cushion, resulting in sloped transitions." If A-B is sharp, liquid
         // is moving without gas compression → NOT gas interference.
-        // Physical basis: liquid is incompressible → instantaneous valve action
-        // → sharp corners. Gas is compressible → gradual corners.
         var gasVeto = (ab > 0.40);
 
-        // ── Step 3: Build final results ──
+        // ── Step 3: Build final results — kNN primary + centroid alternatives ──
         var results = [];
 
-        if (override) {
-            // Physics override is primary — find matching pattern
-            var overridePattern = null;
-            for (var p = 0; p < PATTERNS.length; p++) {
-                if (PATTERNS[p].id === override.id) { overridePattern = PATTERNS[p]; break; }
-            }
-            if (overridePattern) {
-                results.push({
-                    pattern: overridePattern,
-                    confidence: override.confidence,
-                    physicsRule: override.reason,
-                    matchDetails: {},
-                });
-            }
-
-            // Add kNN/centroid alternatives (lower confidence)
-            for (var i = 0; i < Math.min(2, mergedResults.length); i++) {
-                if (mergedResults[i].id === override.id) continue;
-                var altPattern = null;
-                for (var p = 0; p < PATTERNS.length; p++) {
-                    if (PATTERNS[p].id === mergedResults[i].id) { altPattern = PATTERNS[p]; break; }
-                }
-                if (altPattern) {
-                    results.push({
-                        pattern: altPattern,
-                        confidence: Math.round(mergedResults[i].confidence * 50) / 100, // halved
-                        physicsRule: 'Statistical match. Overridden by physics rule.',
-                        matchDetails: {},
-                    });
-                }
-            }
-        } else {
-            // No override — use kNN primary + centroid alternatives
+        {
             for (var i = 0; i < Math.min(3, mergedResults.length); i++) {
                 var cid = mergedResults[i].id;
 
@@ -1282,7 +1232,8 @@ const CardPatterns = (function () {
                     if (L2_CENTROIDS[sid].group !== primaryId) continue;
                     var sc = L2_CENTROIDS[sid];
                     var sDist = 0;
-                    for (var i = 0; i < fVec.length; i++) {
+                    var l2Len = Math.min(fVec.length, sc.mean.length); // L2 centroids are 13-feature
+                    for (var i = 0; i < l2Len; i++) {
                         var sStd = Math.max(sc.std[i], 0.05);
                         var sD = (fVec[i] - sc.mean[i]) / sStd;
                         sDist += sD * sD;
