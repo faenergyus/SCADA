@@ -45,6 +45,13 @@
         .detail-row:last-child { border-bottom: none; }
         .filter-btn { border: 1px solid #374151; }
         .filter-btn.active { border-color: #c8a951; background: rgba(200,169,81,0.15); color: #c8a951; }
+        .cfg-overlay { position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center; }
+        .cfg-dialog { background:#1f2937;border:1px solid #374151;border-radius:0.5rem;padding:1.25rem;min-width:340px;max-width:440px; }
+        .cfg-dialog h3 { color:#c8a951;font-size:0.95rem;font-weight:600;margin-bottom:0.75rem; }
+        .cfg-row { display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0;border-bottom:1px solid #111827; }
+        .cfg-row:last-child { border-bottom:none; }
+        .cfg-row label { flex:1;font-size:0.8rem;cursor:pointer; }
+        .cfg-row select { background:#111827;border:1px solid #374151;border-radius:4px;color:#d1d5db;font-size:0.75rem;padding:2px 4px; }
     </style>
 </head>
 <body class="bg-gray-900 text-gray-100 min-h-screen">
@@ -1477,9 +1484,9 @@
     var trendDays = 7;
     var panelCounter = 0;
 
-    function addChartPanel(initialParams) {
+    function addChartPanel(initialParams, initialAxis) {
         var id = panelCounter++;
-        var panel = { id: id, params: initialParams || ['PctRun'], chart: null };
+        var panel = { id: id, params: initialParams || ['PctRun'], chart: null, axisAssign: initialAxis || {} };
         trendPanels.push(panel);
         renderPanelHTML(panel);
         createPanelChart(panel);
@@ -1492,21 +1499,85 @@
         var div = document.createElement('div');
         div.id = 'trendPanel-' + panel.id;
         div.className = 'info-card mb-4';
-        // Field selector row
-        var fieldHtml = '<div class="flex flex-wrap items-center gap-2 mb-2">';
-        fieldHtml += '<span class="text-xs text-gray-500">Fields:</span>';
+        // Header row with legend chips + gear + remove buttons
+        var headerHtml = '<div class="flex flex-wrap items-center gap-2 mb-2">';
+        headerHtml += '<div id="trendLegend-' + panel.id + '" class="flex flex-wrap gap-2 flex-1"></div>';
+        headerHtml += '<button class="text-gray-400 hover:text-fae-gold text-sm px-1" onclick="openChartConfig(' + panel.id + ')" title="Configure chart">&#9881;</button>';
+        headerHtml += '<button class="text-gray-600 hover:text-red-400 text-sm px-1" onclick="removePanel(' + panel.id + ')" title="Remove chart">&#10005;</button>';
+        headerHtml += '</div>';
+        div.innerHTML = headerHtml + '<div style="height:280px; position:relative;"><canvas id="trendCanvas-' + panel.id + '"></canvas></div>';
+        container.appendChild(div);
+        updatePanelLegend(panel);
+    }
+
+    function updatePanelLegend(panel) {
+        var el = document.getElementById('trendLegend-' + panel.id);
+        if (!el) return;
+        el.innerHTML = panel.params.map(function(pname) {
+            var p = TREND_PARAMS[pname];
+            if (!p) return '';
+            var axisLabel = (panel.axisAssign && panel.axisAssign[pname] === 'right') ? 'R' : 'L';
+            return '<span class="text-xs px-1.5 py-0.5 rounded" style="background:' + p.color + '22;color:' + p.color + ';border:1px solid ' + p.color + '44">'
+                + p.label + ' <span class="opacity-50">(' + axisLabel + ')</span></span>';
+        }).join('');
+        if (panel.params.length === 0) el.innerHTML = '<span class="text-xs text-gray-600">No fields selected — click &#9881; to configure</span>';
+    }
+
+    function openChartConfig(panelId) {
+        var panel = trendPanels.find(function(p) { return p.id === panelId; });
+        if (!panel) return;
+        if (!panel.axisAssign) panel.axisAssign = {};
+        // Build dialog HTML
+        var html = '<div class="cfg-overlay" id="cfgOverlay-' + panelId + '" onclick="if(event.target===this)closeChartConfig(' + panelId + ')">';
+        html += '<div class="cfg-dialog">';
+        html += '<h3>Configure Chart</h3>';
+        html += '<div class="text-xs text-gray-500 mb-3">Select fields and assign to Left or Right axis</div>';
         for (var pname in TREND_PARAMS) {
             var p = TREND_PARAMS[pname];
             var checked = panel.params.indexOf(pname) >= 0 ? ' checked' : '';
-            fieldHtml += '<label class="flex items-center gap-1 text-xs cursor-pointer" style="color:' + p.color + '">'
-                + '<input type="checkbox" data-panel="' + panel.id + '" data-param="' + pname + '"' + checked
-                + ' onchange="toggleParam(' + panel.id + ',\'' + pname + '\',this.checked)" class="accent-current">'
-                + p.label + '</label>';
+            var axisVal = (panel.axisAssign[pname] === 'right') ? 'right' : 'left';
+            html += '<div class="cfg-row">';
+            html += '<input type="checkbox" id="cfg-' + panelId + '-' + pname + '"' + checked + ' class="accent-current" style="accent-color:' + p.color + '">';
+            html += '<label for="cfg-' + panelId + '-' + pname + '" style="color:' + p.color + '">' + p.label + ' <span class="text-gray-500">(' + p.unit + ')</span></label>';
+            html += '<select id="cfgAxis-' + panelId + '-' + pname + '"><option value="left"' + (axisVal === 'left' ? ' selected' : '') + '>Left</option><option value="right"' + (axisVal === 'right' ? ' selected' : '') + '>Right</option></select>';
+            html += '</div>';
         }
-        fieldHtml += '<button class="ml-auto text-gray-600 hover:text-red-400 text-xs px-1" onclick="removePanel(' + panel.id + ')" title="Remove chart">&#10005;</button>';
-        fieldHtml += '</div>';
-        div.innerHTML = fieldHtml + '<div style="height:280px; position:relative;"><canvas id="trendCanvas-' + panel.id + '"></canvas></div>';
-        container.appendChild(div);
+        html += '<div class="flex justify-end gap-2 mt-4">';
+        html += '<button class="card-nav-btn text-xs" onclick="closeChartConfig(' + panelId + ')">Cancel</button>';
+        html += '<button class="card-nav-btn active text-xs" onclick="applyChartConfig(' + panelId + ')">Apply</button>';
+        html += '</div></div></div>';
+        document.body.insertAdjacentHTML('beforeend', html);
+    }
+
+    function closeChartConfig(panelId) {
+        var overlay = document.getElementById('cfgOverlay-' + panelId);
+        if (overlay) overlay.remove();
+    }
+
+    function applyChartConfig(panelId) {
+        var panel = trendPanels.find(function(p) { return p.id === panelId; });
+        if (!panel) return;
+        var newParams = [];
+        var newAxis = {};
+        for (var pname in TREND_PARAMS) {
+            var cb = document.getElementById('cfg-' + panelId + '-' + pname);
+            var ax = document.getElementById('cfgAxis-' + panelId + '-' + pname);
+            if (cb && cb.checked) {
+                newParams.push(pname);
+                newAxis[pname] = ax ? ax.value : 'left';
+            }
+        }
+        panel.params = newParams;
+        panel.axisAssign = newAxis;
+        closeChartConfig(panelId);
+        updatePanelLegend(panel);
+        // Fetch missing data then update chart
+        var missing = newParams.filter(function(n) { return !trendData[n]; });
+        if (missing.length > 0) {
+            fetchTrendParams(missing).then(function() { updatePanelChart(panel); });
+        } else {
+            updatePanelChart(panel);
+        }
     }
 
     function createPanelChart(panel) {
@@ -1546,31 +1617,41 @@
     function updatePanelChart(panel) {
         var chart = panel.chart;
         if (!chart) return;
-        // Collect unique axis types from selected params
-        var axisTypes = {};
+        if (!panel.axisAssign) panel.axisAssign = {};
+        // Collect units for left and right axes
+        var leftUnits = [], rightUnits = [];
         panel.params.forEach(function(pname) {
             var p = TREND_PARAMS[pname];
-            if (p) axisTypes[p.axis] = p.unit;
+            if (!p) return;
+            var side = panel.axisAssign[pname] || 'left';
+            var list = side === 'right' ? rightUnits : leftUnits;
+            if (list.indexOf(p.unit) < 0) list.push(p.unit);
         });
-        var axisKeys = Object.keys(axisTypes);
-        // Build Y-axis configs: first axis left, second axis right
+        // Build Y-axis configs
         var yScales = {};
-        axisKeys.forEach(function(axKey, i) {
-            var scaleId = i === 0 ? 'y' : 'y' + i;
-            yScales[scaleId] = {
-                type: 'linear', position: i === 0 ? 'left' : 'right', display: true,
+        if (leftUnits.length > 0 || panel.params.length === 0) {
+            yScales.y = {
+                type: 'linear', position: 'left', display: true,
                 ticks: { color: '#6b7280', font: { size: 11 } },
-                grid: { color: i === 0 ? '#1f2937' : 'transparent' },
-                title: { display: true, text: axisTypes[axKey], color: '#6b7280', font: { size: 11 } },
+                grid: { color: '#1f2937' },
+                title: { display: true, text: leftUnits.join(' / '), color: '#6b7280', font: { size: 11 } },
             };
-        });
+        }
+        if (rightUnits.length > 0) {
+            yScales.y1 = {
+                type: 'linear', position: 'right', display: true,
+                ticks: { color: '#6b7280', font: { size: 11 } },
+                grid: { color: 'transparent' },
+                title: { display: true, text: rightUnits.join(' / '), color: '#6b7280', font: { size: 11 } },
+            };
+        }
         // Rebuild datasets
         var datasets = [];
         panel.params.forEach(function(pname) {
             var p = TREND_PARAMS[pname];
             if (!p) return;
-            var axIdx = axisKeys.indexOf(p.axis);
-            var scaleId = axIdx === 0 ? 'y' : 'y' + axIdx;
+            var side = panel.axisAssign[pname] || 'left';
+            var scaleId = side === 'right' ? 'y1' : 'y';
             var pts = trendData[pname] || [];
             datasets.push({
                 label: p.label, data: pts, borderColor: p.color,
@@ -1580,28 +1661,11 @@
             });
         });
         chart.data.datasets = datasets;
-        // Update scales (remove old y-axes, add new)
+        // Update scales
         var scales = chart.options.scales;
         Object.keys(scales).forEach(function(k) { if (k.startsWith('y')) delete scales[k]; });
         Object.assign(scales, yScales);
         chart.update('none');
-    }
-
-    function toggleParam(panelId, pname, checked) {
-        var panel = trendPanels.find(function(p) { return p.id === panelId; });
-        if (!panel) return;
-        if (checked && panel.params.indexOf(pname) < 0) {
-            panel.params.push(pname);
-        } else if (!checked) {
-            panel.params = panel.params.filter(function(n) { return n !== pname; });
-        }
-        // Fetch any missing params
-        var missing = panel.params.filter(function(n) { return !trendData[n]; });
-        if (missing.length > 0) {
-            fetchTrendParams(missing).then(function() { updatePanelChart(panel); });
-        } else {
-            updatePanelChart(panel);
-        }
     }
 
     function removePanel(panelId) {
@@ -1670,9 +1734,8 @@
     }
 
     function initTrendCharts() {
-        // Default: one chart with PctRun, one with PPRL+MPRL
-        addChartPanel(['PctRun']);
-        addChartPanel(['PPRL', 'MPRL']);
+        addChartPanel(['PctRun'], {PctRun: 'left'});
+        addChartPanel(['PPRL', 'MPRL'], {PPRL: 'left', MPRL: 'right'});
     }
 
     // Range button clicks
