@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Well Detail — Forty Acres Rod Status</title>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
     <script src="js/wave-equation.js?v=29"></script>
@@ -22,6 +23,12 @@
     </script>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        #login-overlay { position:fixed;inset:0;z-index:9999;background:#111827;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.5rem; }
+        .login-logo { font-size:2.5rem;font-weight:700;color:#c8a951;letter-spacing:0.05em; }
+        .login-logo span { color:#64748b; }
+        .login-tagline { color:#94a3b8;font-size:0.95rem; }
+        .login-title { color:#e2e8f0;font-size:1.1rem;margin-bottom:0.5rem; }
+        .login-error { display:none;margin-top:0.5rem;font-size:0.85rem; }
         .info-card { background: #1f2937; border: 1px solid #374151; border-radius: 0.5rem; padding: 1rem; }
         .info-label { font-size: 0.75rem; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; }
         .info-value { font-size: 1.1rem; font-weight: 600; }
@@ -39,13 +46,33 @@
     </style>
 </head>
 <body class="bg-gray-900 text-gray-100 min-h-screen">
+
+<!-- Login overlay -->
+<div id="login-overlay">
+  <div><div class="login-logo">fae<span>II</span></div></div>
+  <div class="login-tagline">forty acres <em>energy</em> &nbsp;&middot;&nbsp; Rod Status Dashboard</div>
+  <div class="login-title">Sign in to continue</div>
+  <div id="g_id_onload"
+       data-client_id="629380732564-eh0uasomqjdo3up8o2po685g9ep544iq.apps.googleusercontent.com"
+       data-callback="handleCredentialResponse"
+       data-auto_prompt="false"></div>
+  <div class="g_id_signin"
+       data-type="standard" data-size="large" data-theme="filled_blue"
+       data-text="sign_in_with" data-shape="rectangular" data-logo_alignment="left"></div>
+  <div class="login-error" id="login-error"></div>
+</div>
+
     <nav class="bg-fae-blue border-b border-fae-gold/30 px-4 py-3">
         <div class="max-w-7xl mx-auto flex items-center justify-between flex-wrap gap-2">
             <a href="index.html" class="text-xl font-bold text-fae-gold">Forty Acres Rod Status</a>
             <div class="text-sm text-gray-400 flex items-center gap-4">
                 <span id="exportTime" class="text-gray-500"></span>
                 <span id="clock"></span>
-                <span class="text-gray-500 hidden sm:inline">Forty Acres Energy</span>
+                <div id="user-badge" style="display:none" class="flex items-center gap-2">
+                    <img id="user-avatar" class="w-6 h-6 rounded-full" src="" style="display:none">
+                    <span id="user-name" class="text-gray-300 text-xs"></span>
+                    <button onclick="signOut()" class="text-gray-500 hover:text-gray-300 text-xs ml-1">Sign out</button>
+                </div>
             </div>
         </div>
     </nav>
@@ -145,6 +172,73 @@
     </main>
 
     <script>
+    // ── Auth ──────────────────────────────────────────────────────────
+    const ACCOUNTS_CSV  = 'https://docs.google.com/spreadsheets/d/146yuHYjs3RF3wtCK3Qj9NXH94DrStwhieTGqPeLQRfA/gviz/tq?tqx=out:csv&sheet=Accounts&headers=1';
+    const SESSION_KEY   = 'fae_scada_user';
+    const SESSION_HRS   = 720;
+    let AUTH_TOKEN = null;
+
+    function parseCSVLine(line) {
+      const out = []; let cur = '', inQ = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"') { if (inQ && line[i+1] === '"') { cur += '"'; i++; } else inQ = !inQ; }
+        else if (ch === ',' && !inQ) { out.push(cur.trim()); cur = ''; }
+        else cur += ch;
+      }
+      out.push(cur.trim());
+      return out;
+    }
+
+    async function handleCredentialResponse(response) {
+      const payload = JSON.parse(atob(response.credential.split('.')[1]));
+      const email   = payload.email.toLowerCase();
+      const picture = payload.picture;
+      const errorEl = document.getElementById('login-error');
+      errorEl.style.cssText = 'display:block;color:#90bc90';
+      errorEl.textContent   = 'Checking access...';
+      try {
+        const csv  = await fetch(ACCOUNTS_CSV).then(r => r.text());
+        const lines = csv.trim().split('\n');
+        const rows  = lines.slice(1).map(l => { const c = parseCSVLine(l); return { email: c[0], displayName: c[1] }; });
+        const match = rows.find(r => r.email.toLowerCase() === email && r.email !== 'x');
+        if (!match) {
+          errorEl.style.color = '#ff8080';
+          errorEl.textContent = 'Access denied for ' + email + '. Contact Ryan Swift.';
+          return;
+        }
+        const session = { email, displayName: match.displayName, picture,
+                          credential: response.credential,
+                          expires: Date.now() + SESSION_HRS * 3600000 };
+        localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+        startApp(session);
+      } catch(e) {
+        errorEl.style.color = '#ff8080';
+        errorEl.textContent = 'Could not verify access. Try again.';
+      }
+    }
+
+    function startApp(session) {
+      AUTH_TOKEN = session.credential;
+      document.getElementById('login-overlay').style.display = 'none';
+      document.getElementById('user-badge').style.display = 'flex';
+      document.getElementById('user-name').textContent = session.displayName;
+      const av = document.getElementById('user-avatar');
+      if (session.picture) { av.src = session.picture; av.style.display = ''; }
+      if (NODE_ID) {
+        loadWellDetails();
+        loadCards();
+        loadAlarms();
+        if (typeof loadWellNav === 'function') loadWellNav();
+      }
+    }
+
+    function signOut() {
+      localStorage.removeItem(SESSION_KEY);
+      location.reload();
+    }
+
+    // ── Wells ─────────────────────────────────────────────────────────
     // Get well ID from URL
     var params = new URLSearchParams(window.location.search);
     var NODE_ID = decodeURIComponent(params.get('id') || '');
@@ -1430,13 +1524,20 @@
         });
     });
 
-    // ── Init ──
-    if (NODE_ID) {
-        loadWellDetails();
-        loadCards();
-        loadAlarms();
-        loadWellNav();
-    }
+    // ── Init — check session ──
+    (function() {
+      try {
+        const saved = localStorage.getItem(SESSION_KEY);
+        if (saved) {
+          const session = JSON.parse(saved);
+          if (session.expires > Date.now() && session.credential) {
+            startApp(session);
+            return;
+          }
+          localStorage.removeItem(SESSION_KEY);
+        }
+      } catch(e) { localStorage.removeItem(SESSION_KEY); }
+    })();
     </script>
 </body>
 </html>
