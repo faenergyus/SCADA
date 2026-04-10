@@ -117,6 +117,7 @@
 
         <!-- Tab: Trends -->
         <div id="tab-trends">
+            <!-- Range bar -->
             <div class="flex flex-wrap items-center gap-3 mb-4">
                 <span class="text-sm text-gray-400">Range:</span>
                 <div id="trendRangeNav" class="flex flex-wrap gap-2">
@@ -124,23 +125,22 @@
                     <button class="card-nav-btn active" data-days="7">7 Days</button>
                     <button class="card-nav-btn" data-days="30">30 Days</button>
                     <button class="card-nav-btn" data-days="90">90 Days</button>
+                    <button class="card-nav-btn" data-days="custom" id="customRangeBtn">Custom</button>
+                </div>
+                <div id="customRangePicker" class="flex items-center gap-2" style="display:none;">
+                    <input type="date" id="trendDateFrom" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm text-gray-200">
+                    <span class="text-gray-500 text-sm">to</span>
+                    <input type="date" id="trendDateTo" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm text-gray-200">
+                    <button class="card-nav-btn text-xs" onclick="loadTrendsCustom()">Go</button>
                 </div>
                 <span id="trendStatus" class="text-xs text-gray-500 ml-auto"></span>
             </div>
-            <div class="info-card mb-4">
-                <div class="text-sm text-gray-400 mb-2">Runtime %</div>
-                <div style="height:220px; position:relative;"><canvas id="chartPctRun"></canvas></div>
-            </div>
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <div class="info-card">
-                    <div class="text-sm text-gray-400 mb-2">Peak Load (PPRL)</div>
-                    <div style="height:250px; position:relative;"><canvas id="chartPPRL"></canvas></div>
-                </div>
-                <div class="info-card">
-                    <div class="text-sm text-gray-400 mb-2">Min Load (MPRL)</div>
-                    <div style="height:250px; position:relative;"><canvas id="chartMPRL"></canvas></div>
-                </div>
-            </div>
+            <!-- Chart panels -->
+            <div id="trendPanels"></div>
+            <!-- Add chart button -->
+            <button id="addChartBtn" class="mt-3 card-nav-btn text-sm flex items-center gap-1" onclick="addChartPanel()">
+                <span style="font-size:1.1rem;line-height:1;">+</span> Add Chart
+            </button>
         </div>
 
         <!-- Tab: Dyno Cards -->
@@ -268,7 +268,7 @@
         loadAlarms();
         if (typeof loadWellNav === 'function') loadWellNav();
         initTrendCharts();
-        loadTrends(7);
+        loadAllTrends();
       }
     }
 
@@ -1463,25 +1463,71 @@
     }
 
     // ── Trends ──
-    var trendCharts = {};
+    var TREND_PARAMS = {
+        PctRun:      { label: 'Runtime %',       color: '#22c55e', unit: '%',   axis: 'pct' },
+        Fillage:     { label: 'Fillage',         color: '#a855f7', unit: '%',   axis: 'pct' },
+        InferredProd:{ label: 'Inferred Prod',   color: '#f59e0b', unit: 'bbl/d', axis: 'rate' },
+        PPRL:        { label: 'Peak Load',       color: '#c8a951', unit: 'lbs', axis: 'lbs' },
+        MPRL:        { label: 'Min Load',        color: '#3b82f6', unit: 'lbs', axis: 'lbs' },
+        FluidLoad:   { label: 'Fluid Load',      color: '#06b6d4', unit: 'lbs', axis: 'lbs' },
+        SPM:         { label: 'SPM',             color: '#ef4444', unit: 'spm', axis: 'spm' },
+    };
+    var trendPanels = [];
+    var trendData = {};  // cached: { paramName: [{x,y},...] }
     var trendDays = 7;
+    var panelCounter = 0;
 
-    function createTrendChart(canvasId, label, color, unit) {
-        var ctx = document.getElementById(canvasId).getContext('2d');
-        var chart = new Chart(ctx, {
+    function addChartPanel(initialParams) {
+        var id = panelCounter++;
+        var panel = { id: id, params: initialParams || ['PctRun'], chart: null };
+        trendPanels.push(panel);
+        renderPanelHTML(panel);
+        createPanelChart(panel);
+        updatePanelChart(panel);
+        return panel;
+    }
+
+    function renderPanelHTML(panel) {
+        var container = document.getElementById('trendPanels');
+        var div = document.createElement('div');
+        div.id = 'trendPanel-' + panel.id;
+        div.className = 'info-card mb-4';
+        // Field selector row
+        var fieldHtml = '<div class="flex flex-wrap items-center gap-2 mb-2">';
+        fieldHtml += '<span class="text-xs text-gray-500">Fields:</span>';
+        for (var pname in TREND_PARAMS) {
+            var p = TREND_PARAMS[pname];
+            var checked = panel.params.indexOf(pname) >= 0 ? ' checked' : '';
+            fieldHtml += '<label class="flex items-center gap-1 text-xs cursor-pointer" style="color:' + p.color + '">'
+                + '<input type="checkbox" data-panel="' + panel.id + '" data-param="' + pname + '"' + checked
+                + ' onchange="toggleParam(' + panel.id + ',\'' + pname + '\',this.checked)" class="accent-current">'
+                + p.label + '</label>';
+        }
+        fieldHtml += '<button class="ml-auto text-gray-600 hover:text-red-400 text-xs px-1" onclick="removePanel(' + panel.id + ')" title="Remove chart">&#10005;</button>';
+        fieldHtml += '</div>';
+        div.innerHTML = fieldHtml + '<div style="height:280px; position:relative;"><canvas id="trendCanvas-' + panel.id + '"></canvas></div>';
+        container.appendChild(div);
+    }
+
+    function createPanelChart(panel) {
+        var ctx = document.getElementById('trendCanvas-' + panel.id).getContext('2d');
+        panel.chart = new Chart(ctx, {
             type: 'line',
-            data: { datasets: [{ label: label, data: [], borderColor: color, backgroundColor: color + '18', borderWidth: 1.5, pointRadius: 0, pointHitRadius: 6, fill: true, tension: 0.2 }] },
+            data: { datasets: [] },
             options: {
                 responsive: true, maintainAspectRatio: false,
-                animation: { duration: 400 },
+                animation: { duration: 300 },
                 interaction: { mode: 'index', intersect: false },
                 plugins: {
-                    legend: { display: false },
+                    legend: { display: true, position: 'top', labels: { color: '#9ca3af', boxWidth: 12, font: { size: 11 }, padding: 12, usePointStyle: true } },
                     tooltip: {
                         backgroundColor: '#1f2937', borderColor: '#374151', borderWidth: 1,
                         titleColor: '#9ca3af', bodyColor: '#e5e7eb',
                         callbacks: {
-                            label: function(ctx) { return label + ': ' + ctx.parsed.y.toFixed(1) + ' ' + unit; }
+                            label: function(ctx) {
+                                var ds = ctx.dataset;
+                                return ds.label + ': ' + ctx.parsed.y.toFixed(1) + ' ' + (ds._unit || '');
+                            }
                         }
                     }
                 },
@@ -1491,70 +1537,163 @@
                         time: { tooltipFormat: 'MMM d, h:mm a' },
                         ticks: { color: '#6b7280', maxTicksLimit: 8, font: { size: 11 } },
                         grid: { color: '#1f2937' }
-                    },
-                    y: {
-                        ticks: { color: '#6b7280', font: { size: 11 } },
-                        grid: { color: '#1f2937' },
-                        title: { display: true, text: unit, color: '#6b7280', font: { size: 11 } }
                     }
                 }
             }
         });
-        trendCharts[canvasId] = chart;
-        return chart;
     }
 
-    function initTrendCharts() {
-        createTrendChart('chartPctRun', 'Runtime', '#22c55e', '%');
-        createTrendChart('chartPPRL', 'Peak Load', '#c8a951', 'lbs');
-        createTrendChart('chartMPRL', 'Min Load', '#3b82f6', 'lbs');
+    function updatePanelChart(panel) {
+        var chart = panel.chart;
+        if (!chart) return;
+        // Collect unique axis types from selected params
+        var axisTypes = {};
+        panel.params.forEach(function(pname) {
+            var p = TREND_PARAMS[pname];
+            if (p) axisTypes[p.axis] = p.unit;
+        });
+        var axisKeys = Object.keys(axisTypes);
+        // Build Y-axis configs: first axis left, second axis right
+        var yScales = {};
+        axisKeys.forEach(function(axKey, i) {
+            var scaleId = i === 0 ? 'y' : 'y' + i;
+            yScales[scaleId] = {
+                type: 'linear', position: i === 0 ? 'left' : 'right', display: true,
+                ticks: { color: '#6b7280', font: { size: 11 } },
+                grid: { color: i === 0 ? '#1f2937' : 'transparent' },
+                title: { display: true, text: axisTypes[axKey], color: '#6b7280', font: { size: 11 } },
+            };
+        });
+        // Rebuild datasets
+        var datasets = [];
+        panel.params.forEach(function(pname) {
+            var p = TREND_PARAMS[pname];
+            if (!p) return;
+            var axIdx = axisKeys.indexOf(p.axis);
+            var scaleId = axIdx === 0 ? 'y' : 'y' + axIdx;
+            var pts = trendData[pname] || [];
+            datasets.push({
+                label: p.label, data: pts, borderColor: p.color,
+                backgroundColor: p.color + '18', borderWidth: 1.5,
+                pointRadius: 0, pointHitRadius: 6, fill: false,
+                tension: 0.2, yAxisID: scaleId, _unit: p.unit,
+            });
+        });
+        chart.data.datasets = datasets;
+        // Update scales (remove old y-axes, add new)
+        var scales = chart.options.scales;
+        Object.keys(scales).forEach(function(k) { if (k.startsWith('y')) delete scales[k]; });
+        Object.assign(scales, yScales);
+        chart.update('none');
     }
 
-    async function loadTrends(days) {
-        if (!API_BASE || !AUTH_TOKEN) {
-            document.getElementById('trendStatus').textContent = 'API not available';
-            return;
+    function toggleParam(panelId, pname, checked) {
+        var panel = trendPanels.find(function(p) { return p.id === panelId; });
+        if (!panel) return;
+        if (checked && panel.params.indexOf(pname) < 0) {
+            panel.params.push(pname);
+        } else if (!checked) {
+            panel.params = panel.params.filter(function(n) { return n !== pname; });
         }
-        trendDays = days;
-        document.getElementById('trendStatus').textContent = 'Loading...';
+        // Fetch any missing params
+        var missing = panel.params.filter(function(n) { return !trendData[n]; });
+        if (missing.length > 0) {
+            fetchTrendParams(missing).then(function() { updatePanelChart(panel); });
+        } else {
+            updatePanelChart(panel);
+        }
+    }
 
+    function removePanel(panelId) {
+        var idx = trendPanels.findIndex(function(p) { return p.id === panelId; });
+        if (idx < 0) return;
+        var panel = trendPanels[idx];
+        if (panel.chart) panel.chart.destroy();
+        var el = document.getElementById('trendPanel-' + panelId);
+        if (el) el.remove();
+        trendPanels.splice(idx, 1);
+    }
+
+    async function fetchTrendParams(paramNames) {
+        if (!API_BASE || !AUTH_TOKEN) return;
+        var allNeeded = paramNames.filter(function(n) { return !trendData[n]; });
+        if (allNeeded.length === 0) return;
+        document.getElementById('trendStatus').textContent = 'Loading...';
         try {
-            var url = API_BASE + '/history/' + encodeURIComponent(NODE_ID) + '?days=' + days + '&params=PctRun,PPRL,MPRL';
-            var resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + AUTH_TOKEN } });
-            if (resp.status === 401) {
-                document.getElementById('trendStatus').textContent = 'Session expired — sign in again';
-                signOut();
-                return;
+            var qp = 'params=' + allNeeded.join(',');
+            var dateParam = '';
+            if (trendDays === 'custom') {
+                var from = document.getElementById('trendDateFrom').value;
+                var to = document.getElementById('trendDateTo').value;
+                if (from && to) {
+                    var d = Math.ceil((new Date(to) - new Date(from)) / 86400000) + 1;
+                    dateParam = '&days=' + d;
+                }
+            } else {
+                dateParam = '&days=' + trendDays;
             }
+            var url = API_BASE + '/history/' + encodeURIComponent(NODE_ID) + '?' + qp + dateParam;
+            var resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + AUTH_TOKEN } });
+            if (resp.status === 401) { signOut(); return; }
             if (!resp.ok) throw new Error('HTTP ' + resp.status);
             var data = await resp.json();
-
-            var paramMap = { 'PctRun': 'chartPctRun', 'PPRL': 'chartPPRL', 'MPRL': 'chartMPRL' };
             var totalPts = 0;
-            for (var pname in paramMap) {
-                var chart = trendCharts[paramMap[pname]];
-                if (!chart) continue;
+            for (var pname in data.params) {
                 var pdata = data.params[pname];
                 if (pdata && pdata.data) {
-                    chart.data.datasets[0].data = pdata.data.map(function(pt) { return { x: pt[0], y: pt[1] }; });
+                    trendData[pname] = pdata.data.map(function(pt) { return { x: pt[0], y: pt[1] }; });
                     totalPts += pdata.data.length;
-                } else {
-                    chart.data.datasets[0].data = [];
                 }
-                chart.update('none');
             }
-            document.getElementById('trendStatus').textContent = totalPts.toLocaleString() + ' points loaded';
+            document.getElementById('trendStatus').textContent = totalPts.toLocaleString() + ' points';
         } catch(e) {
             document.getElementById('trendStatus').textContent = 'Failed: ' + e.message;
         }
     }
 
+    async function loadAllTrends() {
+        // Collect all params across all panels
+        var allParams = [];
+        trendPanels.forEach(function(p) {
+            p.params.forEach(function(n) { if (allParams.indexOf(n) < 0) allParams.push(n); });
+        });
+        trendData = {};  // clear cache for fresh range
+        await fetchTrendParams(allParams);
+        trendPanels.forEach(function(p) { updatePanelChart(p); });
+    }
+
+    function loadTrendsCustom() {
+        trendDays = 'custom';
+        document.querySelectorAll('#trendRangeNav button').forEach(function(b) { b.classList.remove('active'); });
+        document.getElementById('customRangeBtn').classList.add('active');
+        loadAllTrends();
+    }
+
+    function initTrendCharts() {
+        // Default: one chart with PctRun, one with PPRL+MPRL
+        addChartPanel(['PctRun']);
+        addChartPanel(['PPRL', 'MPRL']);
+    }
+
     // Range button clicks
     document.querySelectorAll('#trendRangeNav button').forEach(function(btn) {
         btn.addEventListener('click', function() {
+            if (btn.dataset.days === 'custom') {
+                document.getElementById('customRangePicker').style.display = 'flex';
+                document.querySelectorAll('#trendRangeNav button').forEach(function(b) { b.classList.remove('active'); });
+                btn.classList.add('active');
+                // Set defaults: last 7 days
+                var now = new Date();
+                var week = new Date(now - 7 * 86400000);
+                document.getElementById('trendDateTo').value = now.toISOString().split('T')[0];
+                document.getElementById('trendDateFrom').value = week.toISOString().split('T')[0];
+                return;
+            }
+            document.getElementById('customRangePicker').style.display = 'none';
             document.querySelectorAll('#trendRangeNav button').forEach(function(b) { b.classList.remove('active'); });
             btn.classList.add('active');
-            loadTrends(parseInt(btn.dataset.days));
+            trendDays = parseInt(btn.dataset.days);
+            loadAllTrends();
         });
     });
 
