@@ -177,6 +177,7 @@
     const SESSION_KEY   = 'fae_scada_user';
     const SESSION_HRS   = 720;
     let AUTH_TOKEN = null;
+    let API_BASE = null;  // loaded from data/api_config.json
 
     function parseCSVLine(line) {
       const out = []; let cur = '', inQ = false;
@@ -218,13 +219,18 @@
       }
     }
 
-    function startApp(session) {
+    async function startApp(session) {
       AUTH_TOKEN = session.credential;
       document.getElementById('login-overlay').style.display = 'none';
       document.getElementById('user-badge').style.display = 'flex';
       document.getElementById('user-name').textContent = session.displayName;
       const av = document.getElementById('user-avatar');
       if (session.picture) { av.src = session.picture; av.style.display = ''; }
+      // Load API base URL from config
+      try {
+        const cfg = await fetch('data/api_config.json').then(r => r.json());
+        API_BASE = cfg.apiBase;
+      } catch(e) { console.warn('No api_config.json, API calls disabled'); }
       if (NODE_ID) {
         loadWellDetails();
         loadCards();
