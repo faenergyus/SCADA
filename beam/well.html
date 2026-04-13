@@ -1471,13 +1471,21 @@
 
     // ── Trends ──
     var TREND_PARAMS = {
-        PctRun:      { label: 'Runtime %',       color: '#22c55e', unit: '%',   axis: 'pct' },
-        Fillage:     { label: 'Fillage',         color: '#a855f7', unit: '%',   axis: 'pct' },
-        InferredProd:{ label: 'Inferred Prod',   color: '#f59e0b', unit: 'bbl/d', axis: 'rate' },
-        PPRL:        { label: 'Peak Load',       color: '#c8a951', unit: 'lbs', axis: 'lbs' },
-        MPRL:        { label: 'Min Load',        color: '#3b82f6', unit: 'lbs', axis: 'lbs' },
-        FluidLoad:   { label: 'Fluid Load',      color: '#06b6d4', unit: 'lbs', axis: 'lbs' },
-        SPM:         { label: 'SPM',             color: '#ef4444', unit: 'spm', axis: 'spm' },
+        // XSPOC (real-time SCADA, 5-min)
+        PctRun:      { label: 'Runtime %',       color: '#22c55e', unit: '%',     source: 'xspoc', group: 'XSPOC' },
+        Fillage:     { label: 'Fillage',         color: '#a855f7', unit: '%',     source: 'xspoc', group: 'XSPOC' },
+        InferredProd:{ label: 'Inferred Prod',   color: '#f59e0b', unit: 'bbl/d', source: 'xspoc', group: 'XSPOC' },
+        PPRL:        { label: 'Peak Load',       color: '#c8a951', unit: 'lbs',   source: 'xspoc', group: 'XSPOC' },
+        MPRL:        { label: 'Min Load',        color: '#3b82f6', unit: 'lbs',   source: 'xspoc', group: 'XSPOC' },
+        FluidLoad:   { label: 'Fluid Load',      color: '#06b6d4', unit: 'lbs',   source: 'xspoc', group: 'XSPOC' },
+        SPM:         { label: 'SPM',             color: '#ef4444', unit: 'spm',   source: 'xspoc', group: 'XSPOC' },
+        // Analysis (PBI production, daily)
+        Oil:         { label: 'Oil',             color: '#84cc16', unit: 'bbl',   source: 'pbi',   group: 'Analysis' },
+        Gas:         { label: 'Gas',             color: '#f97316', unit: 'MCF',   source: 'pbi',   group: 'Analysis' },
+        Water:       { label: 'Water',           color: '#0ea5e9', unit: 'bbl',   source: 'pbi',   group: 'Analysis' },
+        InjWater:    { label: 'Inj Water',       color: '#8b5cf6', unit: 'bbl',   source: 'pbi',   group: 'Analysis' },
+        FTP:         { label: 'FTP',             color: '#ec4899', unit: 'psi',   source: 'pbi',   group: 'Analysis' },
+        CP:          { label: 'CP',              color: '#14b8a6', unit: 'psi',   source: 'pbi',   group: 'Analysis' },
     };
     var trendPanels = [];
     var trendData = {};  // cached: { paramName: [{x,y},...] }
@@ -1532,8 +1540,13 @@
         html += '<div class="cfg-dialog">';
         html += '<h3>Configure Chart</h3>';
         html += '<div class="text-xs text-gray-500 mb-3">Select fields and assign to Left or Right axis</div>';
+        var lastGroup = '';
         for (var pname in TREND_PARAMS) {
             var p = TREND_PARAMS[pname];
+            if (p.group && p.group !== lastGroup) {
+                lastGroup = p.group;
+                html += '<div class="text-xs text-gray-500 font-semibold mt-2 mb-1 uppercase tracking-wider">' + p.group + '</div>';
+            }
             var checked = panel.params.indexOf(pname) >= 0 ? ' checked' : '';
             var axisVal = (panel.axisAssign[pname] === 'right') ? 'right' : 'left';
             html += '<div class="cfg-row">';
@@ -1542,6 +1555,16 @@
             html += '<select id="cfgAxis-' + panelId + '-' + pname + '"><option value="left"' + (axisVal === 'left' ? ' selected' : '') + '>Left</option><option value="right"' + (axisVal === 'right' ? ' selected' : '') + '>Right</option></select>';
             html += '</div>';
         }
+        // Axis scale section
+        var sc = panel.scaleConfig || {};
+        html += '<div class="grid grid-cols-2 gap-3 mt-3 pt-3" style="border-top:1px solid #374151">';
+        html += '<div><div class="text-xs text-gray-400 mb-1">Left Axis Scale</div>';
+        html += '<div class="flex gap-2"><input type="number" id="cfgLMin-' + panelId + '" placeholder="Min (auto)" value="' + (sc.leftMin != null ? sc.leftMin : '') + '" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-200 w-full">';
+        html += '<input type="number" id="cfgLMax-' + panelId + '" placeholder="Max (auto)" value="' + (sc.leftMax != null ? sc.leftMax : '') + '" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-200 w-full"></div></div>';
+        html += '<div><div class="text-xs text-gray-400 mb-1">Right Axis Scale</div>';
+        html += '<div class="flex gap-2"><input type="number" id="cfgRMin-' + panelId + '" placeholder="Min (auto)" value="' + (sc.rightMin != null ? sc.rightMin : '') + '" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-200 w-full">';
+        html += '<input type="number" id="cfgRMax-' + panelId + '" placeholder="Max (auto)" value="' + (sc.rightMax != null ? sc.rightMax : '') + '" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-200 w-full"></div></div>';
+        html += '</div>';
         html += '<div class="flex justify-end gap-2 mt-4">';
         html += '<button class="card-nav-btn text-xs" onclick="closeChartConfig(' + panelId + ')">Cancel</button>';
         html += '<button class="card-nav-btn active text-xs" onclick="applyChartConfig(' + panelId + ')">Apply</button>';
@@ -1567,6 +1590,17 @@
                 newAxis[pname] = ax ? ax.value : 'left';
             }
         }
+        // Read scale config
+        var lMin = document.getElementById('cfgLMin-' + panelId).value;
+        var lMax = document.getElementById('cfgLMax-' + panelId).value;
+        var rMin = document.getElementById('cfgRMin-' + panelId).value;
+        var rMax = document.getElementById('cfgRMax-' + panelId).value;
+        panel.scaleConfig = {
+            leftMin: lMin !== '' ? parseFloat(lMin) : null,
+            leftMax: lMax !== '' ? parseFloat(lMax) : null,
+            rightMin: rMin !== '' ? parseFloat(rMin) : null,
+            rightMax: rMax !== '' ? parseFloat(rMax) : null,
+        };
         panel.params = newParams;
         panel.axisAssign = newAxis;
         closeChartConfig(panelId);
@@ -1627,7 +1661,8 @@
             var list = side === 'right' ? rightUnits : leftUnits;
             if (list.indexOf(p.unit) < 0) list.push(p.unit);
         });
-        // Build Y-axis configs
+        // Build Y-axis configs with optional scale limits
+        var sc = panel.scaleConfig || {};
         var yScales = {};
         if (leftUnits.length > 0 || panel.params.length === 0) {
             yScales.y = {
@@ -1636,6 +1671,8 @@
                 grid: { color: '#1f2937' },
                 title: { display: true, text: leftUnits.join(' / '), color: '#6b7280', font: { size: 11 } },
             };
+            if (sc.leftMin != null) yScales.y.min = sc.leftMin;
+            if (sc.leftMax != null) yScales.y.max = sc.leftMax;
         }
         if (rightUnits.length > 0) {
             yScales.y1 = {
@@ -1644,6 +1681,8 @@
                 grid: { color: 'transparent' },
                 title: { display: true, text: rightUnits.join(' / '), color: '#6b7280', font: { size: 11 } },
             };
+            if (sc.rightMin != null) yScales.y1.min = sc.rightMin;
+            if (sc.rightMax != null) yScales.y1.max = sc.rightMax;
         }
         // Rebuild datasets
         var datasets = [];
@@ -1678,37 +1717,49 @@
         trendPanels.splice(idx, 1);
     }
 
+    function _getDaysParam() {
+        if (trendDays === 'custom') {
+            var from = document.getElementById('trendDateFrom').value;
+            var to = document.getElementById('trendDateTo').value;
+            if (from && to) return Math.ceil((new Date(to) - new Date(from)) / 86400000) + 1;
+            return 7;
+        }
+        return trendDays;
+    }
+
+    async function _fetchFromEndpoint(endpoint, paramNames) {
+        var days = _getDaysParam();
+        var url = API_BASE + '/' + endpoint + '/' + encodeURIComponent(NODE_ID) + '?params=' + paramNames.join(',') + '&days=' + days;
+        var resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + AUTH_TOKEN } });
+        if (resp.status === 401) { signOut(); return 0; }
+        if (!resp.ok) throw new Error(endpoint + ' HTTP ' + resp.status);
+        var data = await resp.json();
+        var pts = 0;
+        for (var pname in data.params) {
+            var pdata = data.params[pname];
+            if (pdata && pdata.data) {
+                trendData[pname] = pdata.data.map(function(pt) { return { x: pt[0], y: pt[1] }; });
+                pts += pdata.data.length;
+            }
+        }
+        return pts;
+    }
+
     async function fetchTrendParams(paramNames) {
         if (!API_BASE || !AUTH_TOKEN) return;
         var allNeeded = paramNames.filter(function(n) { return !trendData[n]; });
         if (allNeeded.length === 0) return;
         document.getElementById('trendStatus').textContent = 'Loading...';
+        // Split by source
+        var xspocParams = allNeeded.filter(function(n) { return !TREND_PARAMS[n] || TREND_PARAMS[n].source !== 'pbi'; });
+        var pbiParams = allNeeded.filter(function(n) { return TREND_PARAMS[n] && TREND_PARAMS[n].source === 'pbi'; });
         try {
-            var qp = 'params=' + allNeeded.join(',');
-            var dateParam = '';
-            if (trendDays === 'custom') {
-                var from = document.getElementById('trendDateFrom').value;
-                var to = document.getElementById('trendDateTo').value;
-                if (from && to) {
-                    var d = Math.ceil((new Date(to) - new Date(from)) / 86400000) + 1;
-                    dateParam = '&days=' + d;
-                }
-            } else {
-                dateParam = '&days=' + trendDays;
-            }
-            var url = API_BASE + '/history/' + encodeURIComponent(NODE_ID) + '?' + qp + dateParam;
-            var resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + AUTH_TOKEN } });
-            if (resp.status === 401) { signOut(); return; }
-            if (!resp.ok) throw new Error('HTTP ' + resp.status);
-            var data = await resp.json();
             var totalPts = 0;
-            for (var pname in data.params) {
-                var pdata = data.params[pname];
-                if (pdata && pdata.data) {
-                    trendData[pname] = pdata.data.map(function(pt) { return { x: pt[0], y: pt[1] }; });
-                    totalPts += pdata.data.length;
-                }
-            }
+            var fetches = [];
+            if (xspocParams.length > 0) fetches.push(_fetchFromEndpoint('history', xspocParams));
+            if (pbiParams.length > 0) fetches.push(_fetchFromEndpoint('production', pbiParams));
+            var results = await Promise.all(fetches);
+            results.forEach(function(pts) { totalPts += pts; });
             document.getElementById('trendStatus').textContent = totalPts.toLocaleString() + ' points';
         } catch(e) {
             document.getElementById('trendStatus').textContent = 'Failed: ' + e.message;
