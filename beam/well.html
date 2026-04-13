@@ -1819,11 +1819,20 @@
                 return { params: p.params, axisAssign: p.axisAssign || {}, scaleConfig: p.scaleConfig || {} };
             })
         };
+        var statusEl = document.getElementById('trendStatus');
+        statusEl.textContent = 'Saving...';
         fetch(API_BASE + '/chart-config/' + encodeURIComponent(NODE_ID), {
             method: 'PUT',
             headers: { 'Authorization': 'Bearer ' + AUTH_TOKEN, 'Content-Type': 'application/json' },
             body: JSON.stringify(cfg)
-        }).catch(function() {});
+        }).then(function(r) {
+            if (r.ok) {
+                statusEl.textContent = 'Layout saved';
+                setTimeout(function() { if (statusEl.textContent === 'Layout saved') statusEl.textContent = ''; }, 3000);
+            } else {
+                statusEl.textContent = 'Save failed (' + r.status + ')';
+            }
+        }).catch(function() { statusEl.textContent = 'Save failed'; });
     }
 
     // Range button clicks
