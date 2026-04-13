@@ -149,7 +149,6 @@
                 <button class="card-nav-btn text-sm flex items-center gap-1" onclick="addChartPanel()">
                     <span style="font-size:1.1rem;line-height:1;">+</span> Add Chart
                 </button>
-                <button class="card-nav-btn text-sm" onclick="saveDefaultConfig()">Save as Default</button>
                 <span id="configSource" class="text-xs text-gray-600 ml-2"></span>
             </div>
         </div>
@@ -1574,6 +1573,7 @@
         html += '</div>';
         html += '<div class="flex justify-end gap-2 mt-4">';
         html += '<button class="card-nav-btn text-xs" onclick="closeChartConfig(' + panelId + ')">Cancel</button>';
+        html += '<button class="card-nav-btn text-xs" onclick="applyChartConfig(' + panelId + ');saveDefaultConfig()">Apply as Default</button>';
         html += '<button class="card-nav-btn active text-xs" onclick="applyChartConfig(' + panelId + ')">Apply</button>';
         html += '</div></div></div>';
         document.body.insertAdjacentHTML('beforeend', html);
