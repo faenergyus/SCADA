@@ -144,10 +144,14 @@
             </div>
             <!-- Chart panels -->
             <div id="trendPanels"></div>
-            <!-- Add chart button -->
-            <button id="addChartBtn" class="mt-3 card-nav-btn text-sm flex items-center gap-1" onclick="addChartPanel()">
-                <span style="font-size:1.1rem;line-height:1;">+</span> Add Chart
-            </button>
+            <!-- Toolbar -->
+            <div class="flex items-center gap-2 mt-3">
+                <button class="card-nav-btn text-sm flex items-center gap-1" onclick="addChartPanel()">
+                    <span style="font-size:1.1rem;line-height:1;">+</span> Add Chart
+                </button>
+                <button class="card-nav-btn text-sm" onclick="saveDefaultConfig()">Save as Default</button>
+                <span id="configSource" class="text-xs text-gray-600 ml-2"></span>
+            </div>
         </div>
 
         <!-- Tab: Dyno Cards -->
@@ -1524,8 +1528,9 @@
         el.innerHTML = panel.params.map(function(pname) {
             var p = TREND_PARAMS[pname];
             if (!p) return '';
+            var c = (panel.colorOverrides && panel.colorOverrides[pname]) || p.color;
             var axisLabel = (panel.axisAssign && panel.axisAssign[pname] === 'right') ? 'R' : 'L';
-            return '<span class="text-xs px-1.5 py-0.5 rounded" style="background:' + p.color + '22;color:' + p.color + ';border:1px solid ' + p.color + '44">'
+            return '<span class="text-xs px-1.5 py-0.5 rounded" style="background:' + c + '22;color:' + c + ';border:1px solid ' + c + '44">'
                 + p.label + ' <span class="opacity-50">(' + axisLabel + ')</span></span>';
         }).join('');
         if (panel.params.length === 0) el.innerHTML = '<span class="text-xs text-gray-600">No fields selected — click &#9881; to configure</span>';
@@ -1550,8 +1555,10 @@
             var checked = panel.params.indexOf(pname) >= 0 ? ' checked' : '';
             var axisVal = (panel.axisAssign[pname] === 'right') ? 'right' : 'left';
             html += '<div class="cfg-row">';
-            html += '<input type="checkbox" id="cfg-' + panelId + '-' + pname + '"' + checked + ' class="accent-current" style="accent-color:' + p.color + '">';
-            html += '<label for="cfg-' + panelId + '-' + pname + '" style="color:' + p.color + '">' + p.label + ' <span class="text-gray-500">(' + p.unit + ')</span></label>';
+            var curColor = (panel.colorOverrides && panel.colorOverrides[pname]) || p.color;
+            html += '<input type="checkbox" id="cfg-' + panelId + '-' + pname + '"' + checked + ' class="accent-current" style="accent-color:' + curColor + '">';
+            html += '<input type="color" id="cfgColor-' + panelId + '-' + pname + '" value="' + curColor + '" style="width:22px;height:22px;padding:0;border:none;background:none;cursor:pointer" title="Change color">';
+            html += '<label for="cfg-' + panelId + '-' + pname + '" style="color:' + curColor + ';flex:1">' + p.label + ' <span class="text-gray-500">(' + p.unit + ')</span></label>';
             html += '<select id="cfgAxis-' + panelId + '-' + pname + '"><option value="left"' + (axisVal === 'left' ? ' selected' : '') + '>Left</option><option value="right"' + (axisVal === 'right' ? ' selected' : '') + '>Right</option></select>';
             html += '</div>';
         }
@@ -1582,12 +1589,17 @@
         if (!panel) return;
         var newParams = [];
         var newAxis = {};
+        var newColors = {};
         for (var pname in TREND_PARAMS) {
             var cb = document.getElementById('cfg-' + panelId + '-' + pname);
             var ax = document.getElementById('cfgAxis-' + panelId + '-' + pname);
+            var clr = document.getElementById('cfgColor-' + panelId + '-' + pname);
             if (cb && cb.checked) {
                 newParams.push(pname);
                 newAxis[pname] = ax ? ax.value : 'left';
+            }
+            if (clr && clr.value !== TREND_PARAMS[pname].color) {
+                newColors[pname] = clr.value;
             }
         }
         // Read scale config
@@ -1603,6 +1615,7 @@
         };
         panel.params = newParams;
         panel.axisAssign = newAxis;
+        panel.colorOverrides = newColors;
         closeChartConfig(panelId);
         updatePanelLegend(panel);
         // Fetch missing data then update chart
@@ -1693,9 +1706,10 @@
             var side = panel.axisAssign[pname] || 'left';
             var scaleId = side === 'right' ? 'y1' : 'y';
             var pts = trendData[pname] || [];
+            var useColor = (panel.colorOverrides && panel.colorOverrides[pname]) || p.color;
             datasets.push({
-                label: p.label, data: pts, borderColor: p.color,
-                backgroundColor: p.color + '18', borderWidth: 1.5,
+                label: p.label, data: pts, borderColor: useColor,
+                backgroundColor: useColor + '18', borderWidth: 1.5,
                 pointRadius: 0, pointHitRadius: 6, fill: false,
                 tension: 0.2, yAxisID: scaleId, _unit: p.unit,
             });
@@ -1800,7 +1814,11 @@
                             addChartPanel(p.params || [], p.axisAssign || {});
                             var panel = trendPanels[trendPanels.length - 1];
                             panel.scaleConfig = p.scaleConfig || {};
+                            panel.colorOverrides = p.colorOverrides || {};
                         });
+                        // Show config source
+                        var srcEl = document.getElementById('configSource');
+                        if (srcEl && cfg.source) srcEl.textContent = cfg.source === 'default' ? 'Using default template' : '';
                         return;
                     }
                 }
@@ -1816,7 +1834,7 @@
         var cfg = {
             days: trendDays,
             panels: trendPanels.map(function(p) {
-                return { params: p.params, axisAssign: p.axisAssign || {}, scaleConfig: p.scaleConfig || {} };
+                return { params: p.params, axisAssign: p.axisAssign || {}, scaleConfig: p.scaleConfig || {}, colorOverrides: p.colorOverrides || {} };
             })
         };
         var statusEl = document.getElementById('trendStatus');
@@ -1833,6 +1851,31 @@
                 statusEl.textContent = 'Save failed (' + r.status + ')';
             }
         }).catch(function() { statusEl.textContent = 'Save failed'; });
+    }
+
+    function saveDefaultConfig() {
+        if (!API_BASE || !AUTH_TOKEN) return;
+        var cfg = {
+            panels: trendPanels.map(function(p) {
+                return { params: p.params, axisAssign: p.axisAssign || {}, scaleConfig: p.scaleConfig || {}, colorOverrides: p.colorOverrides || {} };
+            })
+        };
+        var statusEl = document.getElementById('trendStatus');
+        statusEl.textContent = 'Saving default...';
+        fetch(API_BASE + '/chart-config-default', {
+            method: 'PUT',
+            headers: { 'Authorization': 'Bearer ' + AUTH_TOKEN, 'Content-Type': 'application/json' },
+            body: JSON.stringify(cfg)
+        }).then(function(r) {
+            if (r.ok) {
+                statusEl.textContent = 'Default template saved';
+                var srcEl = document.getElementById('configSource');
+                if (srcEl) srcEl.textContent = '';
+                setTimeout(function() { if (statusEl.textContent === 'Default template saved') statusEl.textContent = ''; }, 3000);
+            } else {
+                statusEl.textContent = 'Save default failed (' + r.status + ')';
+            }
+        }).catch(function() { statusEl.textContent = 'Save default failed'; });
     }
 
     // Range button clicks
