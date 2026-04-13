@@ -1608,9 +1608,10 @@
         // Fetch missing data then update chart
         var missing = newParams.filter(function(n) { return !trendData[n]; });
         if (missing.length > 0) {
-            fetchTrendParams(missing).then(function() { updatePanelChart(panel); });
+            fetchTrendParams(missing).then(function() { updatePanelChart(panel); saveChartConfig(); });
         } else {
             updatePanelChart(panel);
+            saveChartConfig();
         }
     }
 
@@ -1715,6 +1716,7 @@
         var el = document.getElementById('trendPanel-' + panelId);
         if (el) el.remove();
         trendPanels.splice(idx, 1);
+        saveChartConfig();
     }
 
     function _getDaysParam() {
@@ -1784,9 +1786,44 @@
         loadAllTrends();
     }
 
-    function initTrendCharts() {
+    async function initTrendCharts() {
+        // Try to load saved config from server
+        if (API_BASE && AUTH_TOKEN) {
+            try {
+                var url = API_BASE + '/chart-config/' + encodeURIComponent(NODE_ID);
+                var resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + AUTH_TOKEN } });
+                if (resp.ok) {
+                    var cfg = await resp.json();
+                    if (cfg.panels && cfg.panels.length > 0) {
+                        if (cfg.days) trendDays = cfg.days;
+                        cfg.panels.forEach(function(p) {
+                            addChartPanel(p.params || [], p.axisAssign || {});
+                            var panel = trendPanels[trendPanels.length - 1];
+                            panel.scaleConfig = p.scaleConfig || {};
+                        });
+                        return;
+                    }
+                }
+            } catch(e) { /* fall through to defaults */ }
+        }
+        // Defaults
         addChartPanel(['PctRun'], {PctRun: 'left'});
         addChartPanel(['PPRL', 'MPRL'], {PPRL: 'left', MPRL: 'right'});
+    }
+
+    function saveChartConfig() {
+        if (!API_BASE || !AUTH_TOKEN) return;
+        var cfg = {
+            days: trendDays,
+            panels: trendPanels.map(function(p) {
+                return { params: p.params, axisAssign: p.axisAssign || {}, scaleConfig: p.scaleConfig || {} };
+            })
+        };
+        fetch(API_BASE + '/chart-config/' + encodeURIComponent(NODE_ID), {
+            method: 'PUT',
+            headers: { 'Authorization': 'Bearer ' + AUTH_TOKEN, 'Content-Type': 'application/json' },
+            body: JSON.stringify(cfg)
+        }).catch(function() {});
     }
 
     // Range button clicks
