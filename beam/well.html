@@ -1490,18 +1490,29 @@
         FTP:         { label: 'FTP',             color: '#ec4899', unit: 'psi',   source: 'pbi',   group: 'Analysis' },
         CP:          { label: 'CP',              color: '#14b8a6', unit: 'psi',   source: 'pbi',   group: 'Analysis' },
     };
-    var trendPanels = [];
-    var trendData = {};  // cached: { paramName: [{x,y},...] }
+    var trendPanels = [];   // each: { id, columns, slots: [{params,axisAssign,scaleConfig,colorOverrides,chart}] }
+    var trendData = {};     // cached: { paramName: [{x,y},...] }
     var trendDays = 7;
     var panelCounter = 0;
+    var slotCounter = 0;
 
-    function addChartPanel(initialParams, initialAxis) {
+    function _newSlot(params, axisAssign) {
+        return { id: slotCounter++, params: params || [], axisAssign: axisAssign || {}, scaleConfig: {}, colorOverrides: {}, chart: null };
+    }
+
+    function addChartPanel(columns, slotsInit) {
         var id = panelCounter++;
-        var panel = { id: id, params: initialParams || ['PctRun'], chart: null, axisAssign: initialAxis || {} };
+        columns = columns || 1;
+        var slots = [];
+        if (slotsInit) {
+            slotsInit.forEach(function(s) { slots.push(_newSlot(s.params, s.axisAssign)); var sl = slots[slots.length-1]; sl.scaleConfig = s.scaleConfig || {}; sl.colorOverrides = s.colorOverrides || {}; });
+        } else {
+            for (var i = 0; i < columns; i++) slots.push(_newSlot());
+        }
+        var panel = { id: id, columns: columns, slots: slots };
         trendPanels.push(panel);
         renderPanelHTML(panel);
-        createPanelChart(panel);
-        updatePanelChart(panel);
+        panel.slots.forEach(function(slot) { createSlotChart(panel, slot); updateSlotChart(slot); });
         return panel;
     }
 
@@ -1510,215 +1521,174 @@
         var div = document.createElement('div');
         div.id = 'trendPanel-' + panel.id;
         div.className = 'info-card mb-4';
-        // Header row with legend chips + gear + remove buttons
-        var headerHtml = '<div class="flex flex-wrap items-center gap-2 mb-2">';
-        headerHtml += '<div id="trendLegend-' + panel.id + '" class="flex flex-wrap gap-2 flex-1"></div>';
-        headerHtml += '<button class="text-gray-400 hover:text-fae-gold text-sm px-1" onclick="openChartConfig(' + panel.id + ')" title="Configure chart">&#9881;</button>';
-        headerHtml += '<button class="text-gray-600 hover:text-red-400 text-sm px-1" onclick="removePanel(' + panel.id + ')" title="Remove chart">&#10005;</button>';
-        headerHtml += '</div>';
-        div.innerHTML = headerHtml + '<div style="height:280px; position:relative;"><canvas id="trendCanvas-' + panel.id + '"></canvas></div>';
+        // Row header: split control + remove
+        var hdr = '<div class="flex items-center gap-2 mb-2">';
+        hdr += '<span class="text-xs text-gray-500">Layout:</span>';
+        for (var n = 1; n <= 3; n++) {
+            var active = panel.columns === n ? ' active' : '';
+            hdr += '<button class="card-nav-btn text-xs px-2 py-0.5' + active + '" onclick="setPanelColumns(' + panel.id + ',' + n + ')">' + n + '</button>';
+        }
+        hdr += '<button class="text-gray-600 hover:text-red-400 text-xs px-1 ml-auto" onclick="removePanel(' + panel.id + ')" title="Remove row">&#10005;</button>';
+        hdr += '</div>';
+        // Slot grid
+        var grid = '<div style="display:grid;grid-template-columns:repeat(' + panel.columns + ',1fr);gap:8px">';
+        panel.slots.forEach(function(slot) {
+            grid += '<div id="trendSlot-' + slot.id + '">';
+            grid += '<div class="flex items-center gap-1 mb-1" id="slotLegend-' + slot.id + '"></div>';
+            grid += '<div style="height:250px;position:relative"><canvas id="slotCanvas-' + slot.id + '"></canvas></div>';
+            grid += '<div class="flex justify-center mt-1"><button class="text-gray-500 hover:text-fae-gold text-xs" onclick="openSlotConfig(' + panel.id + ',' + slot.id + ')">&#9881; Configure</button></div>';
+            grid += '</div>';
+        });
+        grid += '</div>';
+        div.innerHTML = hdr + grid;
         container.appendChild(div);
-        updatePanelLegend(panel);
+        panel.slots.forEach(function(slot) { updateSlotLegend(slot); });
     }
 
-    function updatePanelLegend(panel) {
-        var el = document.getElementById('trendLegend-' + panel.id);
-        if (!el) return;
-        el.innerHTML = panel.params.map(function(pname) {
-            var p = TREND_PARAMS[pname];
-            if (!p) return '';
-            var c = (panel.colorOverrides && panel.colorOverrides[pname]) || p.color;
-            var axisLabel = (panel.axisAssign && panel.axisAssign[pname] === 'right') ? 'R' : 'L';
-            return '<span class="text-xs px-1.5 py-0.5 rounded" style="background:' + c + '22;color:' + c + ';border:1px solid ' + c + '44">'
-                + p.label + ' <span class="opacity-50">(' + axisLabel + ')</span></span>';
-        }).join('');
-        if (panel.params.length === 0) el.innerHTML = '<span class="text-xs text-gray-600">No fields selected — click &#9881; to configure</span>';
-    }
-
-    function openChartConfig(panelId) {
+    function setPanelColumns(panelId, cols) {
         var panel = trendPanels.find(function(p) { return p.id === panelId; });
         if (!panel) return;
-        if (!panel.axisAssign) panel.axisAssign = {};
-        // Build dialog HTML
-        var html = '<div class="cfg-overlay" id="cfgOverlay-' + panelId + '" onclick="if(event.target===this)closeChartConfig(' + panelId + ')">';
-        html += '<div class="cfg-dialog">';
+        // Destroy existing charts
+        panel.slots.forEach(function(s) { if (s.chart) { s.chart.destroy(); s.chart = null; } });
+        // Add/remove slots
+        while (panel.slots.length < cols) panel.slots.push(_newSlot());
+        while (panel.slots.length > cols) panel.slots.pop();
+        panel.columns = cols;
+        // Re-render
+        var el = document.getElementById('trendPanel-' + panelId);
+        if (el) el.remove();
+        renderPanelHTML(panel);
+        panel.slots.forEach(function(slot) { createSlotChart(panel, slot); updateSlotChart(slot); });
+        saveChartConfig();
+    }
+
+    function updateSlotLegend(slot) {
+        var el = document.getElementById('slotLegend-' + slot.id);
+        if (!el) return;
+        if (!slot.params || slot.params.length === 0) { el.innerHTML = '<span class="text-xs text-gray-600">Click &#9881; Configure</span>'; return; }
+        el.innerHTML = slot.params.map(function(pname) {
+            var p = TREND_PARAMS[pname];
+            if (!p) return '';
+            var c = (slot.colorOverrides && slot.colorOverrides[pname]) || p.color;
+            var ax = (slot.axisAssign && slot.axisAssign[pname] === 'right') ? 'R' : 'L';
+            return '<span class="text-xs px-1 py-0.5 rounded" style="background:' + c + '22;color:' + c + ';border:1px solid ' + c + '44">' + p.label + ' <span class="opacity-50">(' + ax + ')</span></span>';
+        }).join('');
+    }
+
+    function openSlotConfig(panelId, slotId) {
+        var panel = trendPanels.find(function(p) { return p.id === panelId; });
+        if (!panel) return;
+        var slot = panel.slots.find(function(s) { return s.id === slotId; });
+        if (!slot) return;
+        var sid = panelId + '-' + slotId;
+        var html = '<div class="cfg-overlay" id="cfgOverlay-' + sid + '" onclick="if(event.target===this)closeSlotConfig(\'' + sid + '\')">';
+        html += '<div class="cfg-dialog" style="max-height:80vh;overflow-y:auto">';
         html += '<h3>Configure Chart</h3>';
         html += '<div class="text-xs text-gray-500 mb-3">Select fields and assign to Left or Right axis</div>';
         var lastGroup = '';
         for (var pname in TREND_PARAMS) {
             var p = TREND_PARAMS[pname];
-            if (p.group && p.group !== lastGroup) {
-                lastGroup = p.group;
-                html += '<div class="text-xs text-gray-500 font-semibold mt-2 mb-1 uppercase tracking-wider">' + p.group + '</div>';
-            }
-            var checked = panel.params.indexOf(pname) >= 0 ? ' checked' : '';
-            var axisVal = (panel.axisAssign[pname] === 'right') ? 'right' : 'left';
+            if (p.group && p.group !== lastGroup) { lastGroup = p.group; html += '<div class="text-xs text-gray-500 font-semibold mt-2 mb-1 uppercase tracking-wider">' + p.group + '</div>'; }
+            var checked = (slot.params || []).indexOf(pname) >= 0 ? ' checked' : '';
+            var axisVal = (slot.axisAssign && slot.axisAssign[pname] === 'right') ? 'right' : 'left';
+            var curColor = (slot.colorOverrides && slot.colorOverrides[pname]) || p.color;
             html += '<div class="cfg-row">';
-            var curColor = (panel.colorOverrides && panel.colorOverrides[pname]) || p.color;
-            html += '<input type="checkbox" id="cfg-' + panelId + '-' + pname + '"' + checked + ' class="accent-current" style="accent-color:' + curColor + '">';
-            html += '<input type="color" id="cfgColor-' + panelId + '-' + pname + '" value="' + curColor + '" style="width:22px;height:22px;padding:0;border:none;background:none;cursor:pointer" title="Change color">';
-            html += '<label for="cfg-' + panelId + '-' + pname + '" style="color:' + curColor + ';flex:1">' + p.label + ' <span class="text-gray-500">(' + p.unit + ')</span></label>';
-            html += '<select id="cfgAxis-' + panelId + '-' + pname + '"><option value="left"' + (axisVal === 'left' ? ' selected' : '') + '>Left</option><option value="right"' + (axisVal === 'right' ? ' selected' : '') + '>Right</option></select>';
+            html += '<input type="checkbox" id="cfg-' + sid + '-' + pname + '"' + checked + ' style="accent-color:' + curColor + '">';
+            html += '<input type="color" id="cfgColor-' + sid + '-' + pname + '" value="' + curColor + '" style="width:22px;height:22px;padding:0;border:none;background:none;cursor:pointer">';
+            html += '<label for="cfg-' + sid + '-' + pname + '" style="color:' + curColor + ';flex:1">' + p.label + ' (' + p.unit + ')</label>';
+            html += '<select id="cfgAxis-' + sid + '-' + pname + '"><option value="left"' + (axisVal==='left'?' selected':'') + '>Left</option><option value="right"' + (axisVal==='right'?' selected':'') + '>Right</option></select>';
             html += '</div>';
         }
-        // Axis scale section
-        var sc = panel.scaleConfig || {};
+        var sc = slot.scaleConfig || {};
         html += '<div class="grid grid-cols-2 gap-3 mt-3 pt-3" style="border-top:1px solid #374151">';
-        html += '<div><div class="text-xs text-gray-400 mb-1">Left Axis Scale</div>';
-        html += '<div class="flex gap-2"><input type="number" id="cfgLMin-' + panelId + '" placeholder="Min (auto)" value="' + (sc.leftMin != null ? sc.leftMin : '') + '" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-200 w-full">';
-        html += '<input type="number" id="cfgLMax-' + panelId + '" placeholder="Max (auto)" value="' + (sc.leftMax != null ? sc.leftMax : '') + '" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-200 w-full"></div></div>';
-        html += '<div><div class="text-xs text-gray-400 mb-1">Right Axis Scale</div>';
-        html += '<div class="flex gap-2"><input type="number" id="cfgRMin-' + panelId + '" placeholder="Min (auto)" value="' + (sc.rightMin != null ? sc.rightMin : '') + '" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-200 w-full">';
-        html += '<input type="number" id="cfgRMax-' + panelId + '" placeholder="Max (auto)" value="' + (sc.rightMax != null ? sc.rightMax : '') + '" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-200 w-full"></div></div>';
+        html += '<div><div class="text-xs text-gray-400 mb-1">Left Axis Scale</div><div class="flex gap-2"><input type="number" id="cfgLMin-' + sid + '" placeholder="Min" value="' + (sc.leftMin!=null?sc.leftMin:'') + '" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-200 w-full"><input type="number" id="cfgLMax-' + sid + '" placeholder="Max" value="' + (sc.leftMax!=null?sc.leftMax:'') + '" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-200 w-full"></div></div>';
+        html += '<div><div class="text-xs text-gray-400 mb-1">Right Axis Scale</div><div class="flex gap-2"><input type="number" id="cfgRMin-' + sid + '" placeholder="Min" value="' + (sc.rightMin!=null?sc.rightMin:'') + '" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-200 w-full"><input type="number" id="cfgRMax-' + sid + '" placeholder="Max" value="' + (sc.rightMax!=null?sc.rightMax:'') + '" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-200 w-full"></div></div>';
         html += '</div>';
         html += '<div class="flex justify-end gap-2 mt-4">';
-        html += '<button class="card-nav-btn text-xs" onclick="closeChartConfig(' + panelId + ')">Cancel</button>';
-        html += '<button class="card-nav-btn text-xs" onclick="applyChartConfig(' + panelId + ');saveDefaultConfig()">Apply as Default</button>';
-        html += '<button class="card-nav-btn active text-xs" onclick="applyChartConfig(' + panelId + ')">Apply</button>';
+        html += '<button class="card-nav-btn text-xs" onclick="closeSlotConfig(\'' + sid + '\')">Cancel</button>';
+        html += '<button class="card-nav-btn text-xs" onclick="applySlotConfig(' + panelId + ',' + slotId + ');saveDefaultConfig()">Apply as Default</button>';
+        html += '<button class="card-nav-btn active text-xs" onclick="applySlotConfig(' + panelId + ',' + slotId + ')">Apply</button>';
         html += '</div></div></div>';
         document.body.insertAdjacentHTML('beforeend', html);
     }
 
-    function closeChartConfig(panelId) {
-        var overlay = document.getElementById('cfgOverlay-' + panelId);
-        if (overlay) overlay.remove();
-    }
+    function closeSlotConfig(sid) { var el = document.getElementById('cfgOverlay-' + sid); if (el) el.remove(); }
 
-    function applyChartConfig(panelId) {
+    function applySlotConfig(panelId, slotId) {
         var panel = trendPanels.find(function(p) { return p.id === panelId; });
         if (!panel) return;
-        var newParams = [];
-        var newAxis = {};
-        var newColors = {};
+        var slot = panel.slots.find(function(s) { return s.id === slotId; });
+        if (!slot) return;
+        var sid = panelId + '-' + slotId;
+        var newP = [], newA = {}, newC = {};
         for (var pname in TREND_PARAMS) {
-            var cb = document.getElementById('cfg-' + panelId + '-' + pname);
-            var ax = document.getElementById('cfgAxis-' + panelId + '-' + pname);
-            var clr = document.getElementById('cfgColor-' + panelId + '-' + pname);
-            if (cb && cb.checked) {
-                newParams.push(pname);
-                newAxis[pname] = ax ? ax.value : 'left';
-            }
-            if (clr && clr.value !== TREND_PARAMS[pname].color) {
-                newColors[pname] = clr.value;
-            }
+            var cb = document.getElementById('cfg-' + sid + '-' + pname);
+            var ax = document.getElementById('cfgAxis-' + sid + '-' + pname);
+            var clr = document.getElementById('cfgColor-' + sid + '-' + pname);
+            if (cb && cb.checked) { newP.push(pname); newA[pname] = ax ? ax.value : 'left'; }
+            if (clr && clr.value !== TREND_PARAMS[pname].color) newC[pname] = clr.value;
         }
-        // Read scale config
-        var lMin = document.getElementById('cfgLMin-' + panelId).value;
-        var lMax = document.getElementById('cfgLMax-' + panelId).value;
-        var rMin = document.getElementById('cfgRMin-' + panelId).value;
-        var rMax = document.getElementById('cfgRMax-' + panelId).value;
-        panel.scaleConfig = {
-            leftMin: lMin !== '' ? parseFloat(lMin) : null,
-            leftMax: lMax !== '' ? parseFloat(lMax) : null,
-            rightMin: rMin !== '' ? parseFloat(rMin) : null,
-            rightMax: rMax !== '' ? parseFloat(rMax) : null,
-        };
-        panel.params = newParams;
-        panel.axisAssign = newAxis;
-        panel.colorOverrides = newColors;
-        closeChartConfig(panelId);
-        updatePanelLegend(panel);
-        // Fetch missing data then update chart
-        var missing = newParams.filter(function(n) { return !trendData[n]; });
-        if (missing.length > 0) {
-            fetchTrendParams(missing).then(function() { updatePanelChart(panel); saveChartConfig(); });
-        } else {
-            updatePanelChart(panel);
-            saveChartConfig();
-        }
+        var lMin = document.getElementById('cfgLMin-' + sid).value;
+        var lMax = document.getElementById('cfgLMax-' + sid).value;
+        var rMin = document.getElementById('cfgRMin-' + sid).value;
+        var rMax = document.getElementById('cfgRMax-' + sid).value;
+        slot.scaleConfig = { leftMin: lMin!==''?parseFloat(lMin):null, leftMax: lMax!==''?parseFloat(lMax):null, rightMin: rMin!==''?parseFloat(rMin):null, rightMax: rMax!==''?parseFloat(rMax):null };
+        slot.params = newP; slot.axisAssign = newA; slot.colorOverrides = newC;
+        closeSlotConfig(sid);
+        updateSlotLegend(slot);
+        var missing = newP.filter(function(n) { return !trendData[n]; });
+        if (missing.length > 0) { fetchTrendParams(missing).then(function() { updateSlotChart(slot); saveChartConfig(); }); }
+        else { updateSlotChart(slot); saveChartConfig(); }
     }
 
-    function createPanelChart(panel) {
-        var ctx = document.getElementById('trendCanvas-' + panel.id).getContext('2d');
-        panel.chart = new Chart(ctx, {
-            type: 'line',
-            data: { datasets: [] },
+    function createSlotChart(panel, slot) {
+        var ctx = document.getElementById('slotCanvas-' + slot.id);
+        if (!ctx) return;
+        slot.chart = new Chart(ctx.getContext('2d'), {
+            type: 'line', data: { datasets: [] },
             options: {
                 responsive: true, maintainAspectRatio: false,
                 animation: { duration: 300 },
                 interaction: { mode: 'index', intersect: false },
                 plugins: {
-                    legend: { display: true, position: 'top', labels: { color: '#9ca3af', boxWidth: 12, font: { size: 11 }, padding: 12, usePointStyle: true } },
-                    tooltip: {
-                        backgroundColor: '#1f2937', borderColor: '#374151', borderWidth: 1,
-                        titleColor: '#9ca3af', bodyColor: '#e5e7eb',
-                        callbacks: {
-                            label: function(ctx) {
-                                var ds = ctx.dataset;
-                                return ds.label + ': ' + ctx.parsed.y.toFixed(1) + ' ' + (ds._unit || '');
-                            }
-                        }
-                    }
+                    legend: { display: true, position: 'top', labels: { color: '#9ca3af', boxWidth: 10, font: { size: 10 }, padding: 8, usePointStyle: true } },
+                    tooltip: { backgroundColor: '#1f2937', borderColor: '#374151', borderWidth: 1, titleColor: '#9ca3af', bodyColor: '#e5e7eb',
+                        callbacks: { label: function(ctx) { return ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(1) + ' ' + (ctx.dataset._unit || ''); } } }
                 },
-                scales: {
-                    x: {
-                        type: 'time',
-                        time: { tooltipFormat: 'MMM d, h:mm a' },
-                        ticks: { color: '#6b7280', maxTicksLimit: 8, font: { size: 11 } },
-                        grid: { color: '#1f2937' }
-                    }
-                }
+                scales: { x: { type: 'time', time: { tooltipFormat: 'MMM d, h:mm a' }, ticks: { color: '#6b7280', maxTicksLimit: 6, font: { size: 10 } }, grid: { color: '#1f2937' } } }
             }
         });
     }
 
-    function updatePanelChart(panel) {
-        var chart = panel.chart;
+    function updateSlotChart(slot) {
+        var chart = slot.chart;
         if (!chart) return;
-        if (!panel.axisAssign) panel.axisAssign = {};
-        // Collect units for left and right axes
-        var leftUnits = [], rightUnits = [];
-        panel.params.forEach(function(pname) {
-            var p = TREND_PARAMS[pname];
-            if (!p) return;
-            var side = panel.axisAssign[pname] || 'left';
-            var list = side === 'right' ? rightUnits : leftUnits;
-            if (list.indexOf(p.unit) < 0) list.push(p.unit);
+        var leftU = [], rightU = [];
+        (slot.params || []).forEach(function(pname) {
+            var p = TREND_PARAMS[pname]; if (!p) return;
+            var side = (slot.axisAssign && slot.axisAssign[pname] === 'right') ? 'right' : 'left';
+            (side === 'right' ? rightU : leftU).indexOf(p.unit) < 0 && (side === 'right' ? rightU : leftU).push(p.unit);
         });
-        // Build Y-axis configs with optional scale limits
-        var sc = panel.scaleConfig || {};
-        var yScales = {};
-        if (leftUnits.length > 0 || panel.params.length === 0) {
-            yScales.y = {
-                type: 'linear', position: 'left', display: true,
-                ticks: { color: '#6b7280', font: { size: 11 } },
-                grid: { color: '#1f2937' },
-                title: { display: true, text: leftUnits.join(' / '), color: '#6b7280', font: { size: 11 } },
-            };
-            if (sc.leftMin != null) yScales.y.min = sc.leftMin;
-            if (sc.leftMax != null) yScales.y.max = sc.leftMax;
+        var sc = slot.scaleConfig || {}, yS = {};
+        if (leftU.length > 0 || (slot.params||[]).length === 0) {
+            yS.y = { type:'linear', position:'left', display:true, ticks:{color:'#6b7280',font:{size:10}}, grid:{color:'#1f2937'}, title:{display:true,text:leftU.join(' / '),color:'#6b7280',font:{size:10}} };
+            if (sc.leftMin != null) yS.y.min = sc.leftMin; if (sc.leftMax != null) yS.y.max = sc.leftMax;
         }
-        if (rightUnits.length > 0) {
-            yScales.y1 = {
-                type: 'linear', position: 'right', display: true,
-                ticks: { color: '#6b7280', font: { size: 11 } },
-                grid: { color: 'transparent' },
-                title: { display: true, text: rightUnits.join(' / '), color: '#6b7280', font: { size: 11 } },
-            };
-            if (sc.rightMin != null) yScales.y1.min = sc.rightMin;
-            if (sc.rightMax != null) yScales.y1.max = sc.rightMax;
+        if (rightU.length > 0) {
+            yS.y1 = { type:'linear', position:'right', display:true, ticks:{color:'#6b7280',font:{size:10}}, grid:{color:'transparent'}, title:{display:true,text:rightU.join(' / '),color:'#6b7280',font:{size:10}} };
+            if (sc.rightMin != null) yS.y1.min = sc.rightMin; if (sc.rightMax != null) yS.y1.max = sc.rightMax;
         }
-        // Rebuild datasets
-        var datasets = [];
-        panel.params.forEach(function(pname) {
-            var p = TREND_PARAMS[pname];
-            if (!p) return;
-            var side = panel.axisAssign[pname] || 'left';
-            var scaleId = side === 'right' ? 'y1' : 'y';
-            var pts = trendData[pname] || [];
-            var useColor = (panel.colorOverrides && panel.colorOverrides[pname]) || p.color;
-            datasets.push({
-                label: p.label, data: pts, borderColor: useColor,
-                backgroundColor: useColor + '18', borderWidth: 1.5,
-                pointRadius: 0, pointHitRadius: 6, fill: false,
-                tension: 0.2, yAxisID: scaleId, _unit: p.unit,
-            });
+        var ds = [];
+        (slot.params || []).forEach(function(pname) {
+            var p = TREND_PARAMS[pname]; if (!p) return;
+            var side = (slot.axisAssign && slot.axisAssign[pname]==='right') ? 'y1' : 'y';
+            var c = (slot.colorOverrides && slot.colorOverrides[pname]) || p.color;
+            ds.push({ label:p.label, data:trendData[pname]||[], borderColor:c, backgroundColor:c+'18', borderWidth:1.5, pointRadius:0, pointHitRadius:6, fill:false, tension:0.2, yAxisID:side, _unit:p.unit });
         });
-        chart.data.datasets = datasets;
-        // Update scales
+        chart.data.datasets = ds;
         var scales = chart.options.scales;
         Object.keys(scales).forEach(function(k) { if (k.startsWith('y')) delete scales[k]; });
-        Object.assign(scales, yScales);
+        Object.assign(scales, yS);
         chart.update('none');
     }
 
@@ -1726,7 +1696,7 @@
         var idx = trendPanels.findIndex(function(p) { return p.id === panelId; });
         if (idx < 0) return;
         var panel = trendPanels[idx];
-        if (panel.chart) panel.chart.destroy();
+        panel.slots.forEach(function(s) { if (s.chart) s.chart.destroy(); });
         var el = document.getElementById('trendPanel-' + panelId);
         if (el) el.remove();
         trendPanels.splice(idx, 1);
@@ -1783,14 +1753,16 @@
     }
 
     async function loadAllTrends() {
-        // Collect all params across all panels
+        // Collect all params across all panels' slots
         var allParams = [];
         trendPanels.forEach(function(p) {
-            p.params.forEach(function(n) { if (allParams.indexOf(n) < 0) allParams.push(n); });
+            (p.slots || []).forEach(function(s) {
+                (s.params || []).forEach(function(n) { if (allParams.indexOf(n) < 0) allParams.push(n); });
+            });
         });
-        trendData = {};  // clear cache for fresh range
+        trendData = {};
         await fetchTrendParams(allParams);
-        trendPanels.forEach(function(p) { updatePanelChart(p); });
+        trendPanels.forEach(function(p) { (p.slots || []).forEach(function(s) { updateSlotChart(s); }); });
     }
 
     function loadTrendsCustom() {
@@ -1800,8 +1772,18 @@
         loadAllTrends();
     }
 
+    function _serializePanels() {
+        return trendPanels.map(function(p) {
+            return {
+                columns: p.columns || 1,
+                slots: p.slots.map(function(s) {
+                    return { params: s.params || [], axisAssign: s.axisAssign || {}, scaleConfig: s.scaleConfig || {}, colorOverrides: s.colorOverrides || {} };
+                })
+            };
+        });
+    }
+
     async function initTrendCharts() {
-        // Try to load saved config from server
         if (API_BASE && AUTH_TOKEN) {
             try {
                 var url = API_BASE + '/chart-config/' + encodeURIComponent(NODE_ID);
@@ -1811,32 +1793,31 @@
                     if (cfg.panels && cfg.panels.length > 0) {
                         if (cfg.days) trendDays = cfg.days;
                         cfg.panels.forEach(function(p) {
-                            addChartPanel(p.params || [], p.axisAssign || {});
-                            var panel = trendPanels[trendPanels.length - 1];
-                            panel.scaleConfig = p.scaleConfig || {};
-                            panel.colorOverrides = p.colorOverrides || {};
+                            // Backward compat: old format had params/axisAssign at panel level
+                            if (p.slots) {
+                                addChartPanel(p.columns || p.slots.length, p.slots);
+                            } else {
+                                addChartPanel(1, [{ params: p.params || [], axisAssign: p.axisAssign || {}, scaleConfig: p.scaleConfig || {}, colorOverrides: p.colorOverrides || {} }]);
+                            }
                         });
-                        // Show config source
                         var srcEl = document.getElementById('configSource');
                         if (srcEl && cfg.source) srcEl.textContent = cfg.source === 'default' ? 'Using default template' : '';
                         return;
                     }
                 }
-            } catch(e) { /* fall through to defaults */ }
+            } catch(e) { /* fall through */ }
         }
-        // Defaults
-        addChartPanel(['PctRun'], {PctRun: 'left'});
-        addChartPanel(['PPRL', 'MPRL'], {PPRL: 'left', MPRL: 'right'});
+        // Defaults: row 1 = Runtime % full-width, row 2 = PPRL+MPRL split
+        addChartPanel(1, [{ params: ['PctRun'], axisAssign: {PctRun:'left'} }]);
+        addChartPanel(2, [
+            { params: ['PPRL'], axisAssign: {PPRL:'left'} },
+            { params: ['MPRL'], axisAssign: {MPRL:'left'} },
+        ]);
     }
 
     function saveChartConfig() {
         if (!API_BASE || !AUTH_TOKEN) return;
-        var cfg = {
-            days: trendDays,
-            panels: trendPanels.map(function(p) {
-                return { params: p.params, axisAssign: p.axisAssign || {}, scaleConfig: p.scaleConfig || {}, colorOverrides: p.colorOverrides || {} };
-            })
-        };
+        var cfg = { days: trendDays, panels: _serializePanels() };
         var statusEl = document.getElementById('trendStatus');
         statusEl.textContent = 'Saving...';
         fetch(API_BASE + '/chart-config/' + encodeURIComponent(NODE_ID), {
@@ -1847,19 +1828,13 @@
             if (r.ok) {
                 statusEl.textContent = 'Layout saved';
                 setTimeout(function() { if (statusEl.textContent === 'Layout saved') statusEl.textContent = ''; }, 3000);
-            } else {
-                statusEl.textContent = 'Save failed (' + r.status + ')';
-            }
+            } else { statusEl.textContent = 'Save failed (' + r.status + ')'; }
         }).catch(function() { statusEl.textContent = 'Save failed'; });
     }
 
     function saveDefaultConfig() {
         if (!API_BASE || !AUTH_TOKEN) return;
-        var cfg = {
-            panels: trendPanels.map(function(p) {
-                return { params: p.params, axisAssign: p.axisAssign || {}, scaleConfig: p.scaleConfig || {}, colorOverrides: p.colorOverrides || {} };
-            })
-        };
+        var cfg = { panels: _serializePanels() };
         var statusEl = document.getElementById('trendStatus');
         statusEl.textContent = 'Saving default...';
         fetch(API_BASE + '/chart-config-default', {
