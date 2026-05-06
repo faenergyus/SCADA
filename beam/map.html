@@ -65,6 +65,24 @@
         /* Marker cluster — FAE colors */
         .marker-cluster { background: rgba(200,169,81,0.25); }
         .marker-cluster div { background: rgba(200,169,81,0.7); color:#111827; font-weight:600; }
+
+        /* Permanent feature labels — readable on satellite imagery */
+        .fae-label {
+            background: transparent;
+            border: none;
+            box-shadow: none;
+            color: #fff;
+            font-size: 11px;
+            font-weight: 600;
+            text-shadow: 0 0 2px #000, 0 0 3px #000, 1px 1px 2px #000;
+            padding: 0 2px;
+            white-space: nowrap;
+            pointer-events: none;
+        }
+        .fae-label::before { display: none; }  /* hide tooltip arrow */
+        /* Hide all labels by default; .labels-on body shows them */
+        .leaflet-tooltip.fae-label { display: none; }
+        body.labels-on .leaflet-tooltip.fae-label { display: block; }
     </style>
 </head>
 <body class="bg-gray-900 text-gray-100">
@@ -105,6 +123,12 @@
 <div id="loading-badge">Loading layer…</div>
 
 <div class="layer-panel" id="layerPanel">
+  <h3>Display</h3>
+  <label style="margin-bottom:6px">
+    <input type="checkbox" id="labelsToggle" checked>
+    <span>Show names</span>
+    <span class="count" id="labelsHint">zoom ≥ 14</span>
+  </label>
   <h3>Basemap</h3>
   <div class="basemap-row">
     <button class="basemap-btn active" data-bm="esri">Satellite</button>
@@ -213,6 +237,17 @@ function initMap() {
   const basemaps = { esri: L.layerGroup([esri, esriLabels]), osm, topo };
   currentBasemap = basemaps.esri.addTo(map);
 
+  // ── Labels: zoom-gated permanent tooltips ──────────────────────────
+  const LABEL_MIN_ZOOM = 14;
+  function updateLabelsClass() {
+    const wantLabels = document.getElementById('labelsToggle').checked;
+    const zoomedIn = map.getZoom() >= LABEL_MIN_ZOOM;
+    document.body.classList.toggle('labels-on', wantLabels && zoomedIn);
+  }
+  map.on('zoomend', updateLabelsClass);
+  document.getElementById('labelsToggle').addEventListener('change', updateLabelsClass);
+  updateLabelsClass();
+
   document.querySelectorAll('.basemap-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.basemap-btn').forEach(b => b.classList.remove('active'));
@@ -300,6 +335,18 @@ function buildLayer(geojson, color, meta) {
         ${p.desc ? `<div class="pdesc">${escapeHtml(p.desc)}</div>` : ''}
         <div class="pdesc" style="margin-top:6px;color:#6b7280;font-size:0.7rem">${escapeHtml(meta.title)}</div>`;
       layer.bindPopup(html, { autoPan: true });
+      if (p.name) {
+        const t = feature.geometry.type;
+        const dir = (t === 'Point') ? 'right' : 'center';
+        const offset = (t === 'Point') ? L.point(8, 0) : L.point(0, 0);
+        layer.bindTooltip(p.name, {
+          permanent: true,
+          direction: dir,
+          offset,
+          className: 'fae-label',
+          sticky: false
+        });
+      }
     }
   });
 
