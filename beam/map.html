@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Map — Forty Acres Rod Status</title>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = { theme: { extend: { colors: { 'fae-blue': '#1e3a5f', 'fae-gold': '#c8a951' } } } }
+    </script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; }
+        html, body { height: 100%; }
+        #login-overlay { position:fixed;inset:0;z-index:9999;background:#111827;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.5rem; }
+        .login-logo { font-size:2.5rem;font-weight:700;color:#c8a951;letter-spacing:0.05em; }
+        .login-logo span { color:#64748b; }
+        .login-tagline { color:#94a3b8;font-size:0.95rem; }
+        .login-title { color:#e2e8f0;font-size:1.1rem;margin-bottom:0.5rem; }
+        .login-error { display:none;margin-top:0.5rem;font-size:0.85rem; }
+
+        #map { position: absolute; top: 56px; bottom: 0; left: 0; right: 0; background:#111827; }
+        nav { position: relative; z-index: 500; }
+
+        /* Layer panel (floats inside the map) */
+        .layer-panel {
+            position: absolute; top: 12px; right: 12px; z-index: 600;
+            background: rgba(17,24,39,0.92); border: 1px solid #c8a95133;
+            border-radius: 8px; padding: 10px 12px; max-width: 300px;
+            color: #e5e7eb; font-size: 0.85rem; box-shadow: 0 6px 24px rgba(0,0,0,0.4);
+            max-height: calc(100vh - 96px); overflow: auto;
+        }
+        .layer-panel h3 { color:#c8a951; font-size:0.8rem; font-weight:600; margin: 6px 0 4px; letter-spacing:0.05em; text-transform: uppercase; }
+        .layer-panel label { display:flex; align-items:center; gap:8px; padding:3px 0; cursor:pointer; }
+        .layer-panel label:hover { color:#fff; }
+        .layer-panel .swatch { width: 12px; height: 12px; border-radius: 50%; flex: 0 0 12px; border:1px solid rgba(255,255,255,0.3); }
+        .layer-panel .count { color:#6b7280; font-size:0.7rem; margin-left:auto; }
+        .layer-panel input[type=checkbox] { accent-color: #c8a951; }
+        .basemap-row { display:flex; gap:6px; margin-bottom: 8px; }
+        .basemap-btn { flex:1; padding:4px 6px; border-radius:5px; border:1px solid #374151; background:#1f2937; color:#9ca3af; font-size:0.75rem; cursor:pointer; }
+        .basemap-btn.active { border-color:#c8a951; color:#c8a951; background: rgba(200,169,81,0.12); }
+
+        /* Loading badge */
+        #loading-badge {
+            position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+            z-index: 700; padding: 6px 12px; border-radius: 6px;
+            background: rgba(17,24,39,0.9); color:#c8a951; font-size:0.8rem;
+            border:1px solid #c8a95133; display:none;
+        }
+
+        /* Popup styling */
+        .leaflet-popup-content-wrapper { background:#1f2937; color:#e5e7eb; }
+        .leaflet-popup-tip { background:#1f2937; }
+        .leaflet-popup-content { margin: 8px 12px; font-size: 0.85rem; max-width: 260px; }
+        .leaflet-popup-content .pname { color:#c8a951; font-weight:600; margin-bottom:4px; }
+        .leaflet-popup-content .pdesc { color:#cbd5e1; font-size:0.78rem; line-height:1.35; }
+        .leaflet-popup-content a { color:#93c5fd; }
+        .leaflet-container a.leaflet-popup-close-button { color:#9ca3af; }
+
+        /* Marker cluster — FAE colors */
+        .marker-cluster { background: rgba(200,169,81,0.25); }
+        .marker-cluster div { background: rgba(200,169,81,0.7); color:#111827; font-weight:600; }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100">
+
+<!-- Login overlay -->
+<div id="login-overlay">
+  <div><div class="login-logo">fae<span>II</span></div></div>
+  <div class="login-tagline">forty acres <em>energy</em> &nbsp;&middot;&nbsp; Map</div>
+  <div class="login-title">Sign in to continue</div>
+  <div id="g_id_onload"
+       data-client_id="629380732564-eh0uasomqjdo3up8o2po685g9ep544iq.apps.googleusercontent.com"
+       data-callback="handleCredentialResponse"
+       data-auto_prompt="false"></div>
+  <div class="g_id_signin"
+       data-type="standard" data-size="large" data-theme="filled_blue"
+       data-text="sign_in_with" data-shape="rectangular" data-logo_alignment="left"></div>
+  <div class="login-error" id="login-error"></div>
+</div>
+
+<nav class="bg-fae-blue border-b border-fae-gold/30 px-4 py-3" style="height:56px; display:flex; align-items:center;">
+  <div class="max-w-7xl mx-auto flex items-center justify-between flex-wrap gap-3 w-full">
+    <div class="flex items-center gap-4">
+      <a href="index.html" class="text-xl font-bold text-fae-gold">Forty Acres Rod Status</a>
+      <a href="index.html" class="text-sm text-gray-300 hover:text-fae-gold">Wells</a>
+      <a href="map.html" class="text-sm text-fae-gold border-b border-fae-gold">Map</a>
+    </div>
+    <div class="text-sm text-gray-400 flex items-center gap-4">
+      <div id="user-badge" style="display:none" class="flex items-center gap-2">
+        <img id="user-avatar" class="w-6 h-6 rounded-full" src="" style="display:none">
+        <span id="user-name" class="text-gray-300 text-xs"></span>
+        <button onclick="signOut()" class="text-gray-500 hover:text-gray-300 text-xs ml-1">Sign out</button>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<div id="map"></div>
+<div id="loading-badge">Loading layer…</div>
+
+<div class="layer-panel" id="layerPanel">
+  <h3>Basemap</h3>
+  <div class="basemap-row">
+    <button class="basemap-btn active" data-bm="esri">Satellite</button>
+    <button class="basemap-btn" data-bm="osm">Streets</button>
+    <button class="basemap-btn" data-bm="topo">Topo</button>
+  </div>
+  <h3>Layers</h3>
+  <div id="layerList"></div>
+</div>
+
+<script>
+// ── Auth (same as index.html) ────────────────────────────────────────
+const ACCOUNTS_CSV = 'https://docs.google.com/spreadsheets/d/146yuHYjs3RF3wtCK3Qj9NXH94DrStwhieTGqPeLQRfA/gviz/tq?tqx=out:csv&sheet=Accounts&headers=1';
+const SESSION_KEY  = 'fae_scada_user';
+const SESSION_HRS  = 720;
+
+function parseCSVLine(line) {
+  const out = []; let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') { if (inQ && line[i+1] === '"') { cur += '"'; i++; } else inQ = !inQ; }
+    else if (ch === ',' && !inQ) { out.push(cur.trim()); cur = ''; }
+    else cur += ch;
+  }
+  out.push(cur.trim()); return out;
+}
+
+async function handleCredentialResponse(response) {
+  const payload = JSON.parse(atob(response.credential.split('.')[1]));
+  const email   = payload.email.toLowerCase();
+  const picture = payload.picture;
+  const errorEl = document.getElementById('login-error');
+  errorEl.style.cssText = 'display:block;color:#90bc90';
+  errorEl.textContent   = 'Checking access...';
+  try {
+    const csv  = await fetch(ACCOUNTS_CSV).then(r => r.text());
+    const lines = csv.trim().split('\n');
+    const rows  = lines.slice(1).map(l => { const c = parseCSVLine(l); return { email: c[0], displayName: c[1] }; });
+    const match = rows.find(r => r.email.toLowerCase() === email && r.email !== 'x');
+    if (!match) {
+      errorEl.style.color = '#ff8080';
+      errorEl.textContent = 'Access denied for ' + email + '. Contact Ryan Swift.';
+      return;
+    }
+    const session = { email, displayName: match.displayName, picture,
+                      credential: response.credential,
+                      expires: Date.now() + SESSION_HRS * 3600000 };
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    startApp(session);
+  } catch(e) {
+    errorEl.style.color = '#ff8080';
+    errorEl.textContent = 'Could not verify access. Try again.';
+  }
+}
+
+function signOut() { localStorage.removeItem(SESSION_KEY); location.reload(); }
+
+(function() {
+  try {
+    const saved = localStorage.getItem(SESSION_KEY);
+    if (saved) {
+      const session = JSON.parse(saved);
+      if (session.expires > Date.now() && session.credential) { startApp(session); return; }
+      localStorage.removeItem(SESSION_KEY);
+    }
+  } catch(e) { localStorage.removeItem(SESSION_KEY); }
+})();
+
+function startApp(session) {
+  document.getElementById('login-overlay').style.display = 'none';
+  document.getElementById('user-badge').style.display = 'flex';
+  document.getElementById('user-name').textContent = session.displayName || session.email || '';
+  const av = document.getElementById('user-avatar');
+  if (session.picture) { av.src = session.picture; av.style.display = ''; }
+  initMap();
+}
+
+// ── Map ──────────────────────────────────────────────────────────────
+let map;
+const layerObjects = {};   // slug -> { layer, loaded, meta, color }
+let currentBasemap;
+
+// Color palette per layer slug (stable assignment by index)
+const PALETTE = ['#c8a951','#60a5fa','#34d399','#f87171','#a78bfa','#fb923c','#22d3ee','#f472b6','#facc15','#4ade80','#fca5a5','#818cf8','#2dd4bf','#fdba74','#e879f9','#94a3b8','#fde68a','#bef264'];
+
+function colorFor(idx) { return PALETTE[idx % PALETTE.length]; }
+
+function initMap() {
+  map = L.map('map', { zoomControl: true, preferCanvas: true }).setView([32.5, -103.5], 9);
+
+  // Basemaps
+  const esri = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    attribution: 'Tiles © Esri',
+    maxZoom: 19
+  });
+  const esriLabels = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19, opacity: 0.85
+  });
+  const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap', maxZoom: 19
+  });
+  const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenTopoMap (CC-BY-SA)', maxZoom: 17
+  });
+
+  const basemaps = { esri: L.layerGroup([esri, esriLabels]), osm, topo };
+  currentBasemap = basemaps.esri.addTo(map);
+
+  document.querySelectorAll('.basemap-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.basemap-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      map.removeLayer(currentBasemap);
+      currentBasemap = basemaps[btn.dataset.bm].addTo(map);
+      currentBasemap.bringToBack();
+    });
+  });
+
+  loadIndex();
+}
+
+async function loadIndex() {
+  const idx = await fetch('data/map/index.json').then(r => r.json());
+  const list = document.getElementById('layerList');
+  list.innerHTML = '';
+  idx.layers.forEach((meta, i) => {
+    const color = colorFor(i);
+    layerObjects[meta.slug] = { layer: null, loaded: false, meta, color };
+    const row = document.createElement('label');
+    row.innerHTML = `
+      <input type="checkbox" data-slug="${meta.slug}" ${meta.default_on ? 'checked' : ''}>
+      <span class="swatch" style="background:${color}"></span>
+      <span>${meta.title}</span>
+      <span class="count">${meta.feature_count.toLocaleString()}</span>`;
+    list.appendChild(row);
+    row.querySelector('input').addEventListener('change', e => toggleLayer(meta.slug, e.target.checked));
+  });
+
+  // Pre-load default-on layers and fit bounds to their union
+  const defaults = idx.layers.filter(m => m.default_on);
+  if (defaults.length === 0) return;
+  await Promise.all(defaults.map(m => loadLayer(m.slug)));
+  fitToVisible();
+}
+
+function showBadge(text) {
+  const b = document.getElementById('loading-badge');
+  b.textContent = text; b.style.display = 'block';
+}
+function hideBadge() { document.getElementById('loading-badge').style.display = 'none'; }
+
+async function loadLayer(slug) {
+  const obj = layerObjects[slug];
+  if (!obj || obj.loaded) return;
+  showBadge('Loading ' + obj.meta.title + '…');
+  try {
+    const gj = await fetch('data/map/' + obj.meta.file).then(r => r.json());
+    obj.layer = buildLayer(gj, obj.color, obj.meta);
+    obj.loaded = true;
+  } finally {
+    hideBadge();
+  }
+}
+
+function buildLayer(geojson, color, meta) {
+  const hasManyPoints = (meta.geom_counts.Point || 0) >= 50;
+  const cluster = hasManyPoints ? L.markerClusterGroup({
+    showCoverageOnHover: false,
+    maxClusterRadius: 50,
+    spiderfyOnMaxZoom: true
+  }) : null;
+
+  const lineStyle = { color, weight: 2, opacity: 0.85 };
+  const polyStyle = { color, weight: 1.5, opacity: 0.9, fillColor: color, fillOpacity: 0.15 };
+
+  const gj = L.geoJSON(geojson, {
+    style: feature => {
+      const t = feature.geometry.type;
+      if (t === 'LineString' || t === 'MultiLineString') return lineStyle;
+      if (t === 'Polygon' || t === 'MultiPolygon') return polyStyle;
+      return {};
+    },
+    pointToLayer: (feature, latlng) => {
+      return L.circleMarker(latlng, {
+        radius: 5, color: '#111827', weight: 1.5,
+        fillColor: color, fillOpacity: 0.95
+      });
+    },
+    onEachFeature: (feature, layer) => {
+      const p = feature.properties || {};
+      const html = `
+        <div class="pname">${escapeHtml(p.name || '(unnamed)')}</div>
+        ${p.desc ? `<div class="pdesc">${escapeHtml(p.desc)}</div>` : ''}
+        <div class="pdesc" style="margin-top:6px;color:#6b7280;font-size:0.7rem">${escapeHtml(meta.title)}</div>`;
+      layer.bindPopup(html, { autoPan: true });
+    }
+  });
+
+  if (cluster) {
+    // Add only point markers to the cluster, lines/polys directly to map
+    const clusterPoints = L.featureGroup();
+    const otherGeoms = L.featureGroup();
+    gj.eachLayer(l => {
+      if (l instanceof L.CircleMarker) clusterPoints.addLayer(l);
+      else otherGeoms.addLayer(l);
+    });
+    cluster.addLayer(clusterPoints);
+    const group = L.featureGroup([cluster, otherGeoms]);
+    group.addTo(map);
+    return group;
+  }
+  gj.addTo(map);
+  return gj;
+}
+
+function toggleLayer(slug, on) {
+  const obj = layerObjects[slug];
+  if (!obj) return;
+  if (on) {
+    if (!obj.loaded) {
+      loadLayer(slug);
+    } else if (obj.layer && !map.hasLayer(obj.layer)) {
+      obj.layer.addTo(map);
+    }
+  } else if (obj.layer && map.hasLayer(obj.layer)) {
+    map.removeLayer(obj.layer);
+  }
+}
+
+function fitToVisible() {
+  const bounds = L.latLngBounds([]);
+  Object.values(layerObjects).forEach(o => {
+    if (o.layer && map.hasLayer(o.layer) && typeof o.layer.getBounds === 'function') {
+      try {
+        const b = o.layer.getBounds();
+        if (b && b.isValid()) bounds.extend(b);
+      } catch(e) {}
+    }
+  });
+  if (bounds.isValid()) map.fitBounds(bounds, { padding: [30, 30], maxZoom: 13 });
+}
+
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+</script>
+
+</body>
+</html>

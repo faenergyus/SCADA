@@ -1,0 +1,285 @@
+{
+  "source": "C:\\Users\\RSwift\\AppData\\LocalLow\\Google\\GoogleEarth\\myplaces.kml",
+  "generated_at": "2026-05-06T16:43:37",
+  "bounds": [
+    -104.182098,
+    0.0,
+    0.0,
+    33.511372
+  ],
+  "geom_counts": {
+    "Polygon": 5579,
+    "Point": 4736,
+    "LineString": 15000,
+    "GeometryCollection": 46
+  },
+  "layers": [
+    {
+      "slug": "ryan_my_wells",
+      "title": "My Wells",
+      "path": [
+        "Ryan",
+        "NM",
+        "My Wells"
+      ],
+      "default_on": true,
+      "file": "ryan_my_wells.geojson",
+      "size_kb": 88.4,
+      "feature_count": 597,
+      "geom_counts": {
+        "Polygon": 17,
+        "Point": 387,
+        "LineString": 193
+      }
+    },
+    {
+      "slug": "ryan_mammoth",
+      "title": "Mammoth",
+      "path": [
+        "Ryan",
+        "NM",
+        "Mammoth"
+      ],
+      "default_on": true,
+      "file": "ryan_mammoth.geojson",
+      "size_kb": 5.3,
+      "feature_count": 53,
+      "geom_counts": {
+        "Point": 53
+      }
+    },
+    {
+      "slug": "ryan_blackbeard",
+      "title": "Blackbeard",
+      "path": [
+        "Ryan",
+        "NM",
+        "Blackbeard"
+      ],
+      "default_on": true,
+      "file": "ryan_blackbeard.geojson",
+      "size_kb": 48.7,
+      "feature_count": 368,
+      "geom_counts": {
+        "Point": 325,
+        "LineString": 38,
+        "Polygon": 5
+      }
+    },
+    {
+      "slug": "ryan_oxy",
+      "title": "Oxy (Jason)",
+      "path": [
+        "Ryan",
+        "NM",
+        "Oxy (Jason)"
+      ],
+      "default_on": true,
+      "file": "ryan_oxy.geojson",
+      "size_kb": 33.3,
+      "feature_count": 226,
+      "geom_counts": {
+        "Point": 179,
+        "LineString": 27,
+        "Polygon": 20
+      }
+    },
+    {
+      "slug": "ryan_jal_north",
+      "title": "Jal North (Raul)",
+      "path": [
+        "Ryan",
+        "NM",
+        "Jal North (Raul)"
+      ],
+      "default_on": true,
+      "file": "ryan_jal_north.geojson",
+      "size_kb": 28.5,
+      "feature_count": 204,
+      "geom_counts": {
+        "Point": 149,
+        "LineString": 55
+      }
+    },
+    {
+      "slug": "ryan_jal_area",
+      "title": "Jal Area (Oswaldo)",
+      "path": [
+        "Ryan",
+        "NM",
+        "Jal Area (Oswaldo)"
+      ],
+      "default_on": true,
+      "file": "ryan_jal_area.geojson",
+      "size_kb": 42.5,
+      "feature_count": 284,
+      "geom_counts": {
+        "Point": 198,
+        "LineString": 83,
+        "Polygon": 3
+      }
+    },
+    {
+      "slug": "ryan_other",
+      "title": "Other",
+      "path": [
+        "Ryan",
+        "NM",
+        "Other"
+      ],
+      "default_on": false,
+      "file": "ryan_other.geojson",
+      "size_kb": 0.7,
+      "feature_count": 5,
+      "geom_counts": {
+        "Point": 5
+      }
+    },
+    {
+      "slug": "ryan_rice_line",
+      "title": "RICE Line Purchase",
+      "path": [
+        "Ryan",
+        "NM",
+        "RICE Line Purchase"
+      ],
+      "default_on": false,
+      "file": "ryan_rice_line.geojson",
+      "size_kb": 6.1,
+      "feature_count": 22,
+      "geom_counts": {
+        "LineString": 22
+      }
+    },
+    {
+      "slug": "ryan_fae2_mr_wf",
+      "title": "FAE2 MR/WF Project",
+      "path": [
+        "Ryan",
+        "NM",
+        "FAE2_MR_WF_Project_04222024.kmz"
+      ],
+      "default_on": false,
+      "file": "ryan_fae2_mr_wf.geojson",
+      "size_kb": 23.0,
+      "feature_count": 154,
+      "geom_counts": {
+        "Point": 107,
+        "LineString": 29,
+        "Polygon": 18
+      }
+    },
+    {
+      "slug": "pipe_etc",
+      "title": "ETC pipelines",
+      "path": [
+        "3rd party",
+        "ETC.kmz",
+        "ETC"
+      ],
+      "default_on": false,
+      "file": "pipe_etc.geojson",
+      "size_kb": 856.7,
+      "feature_count": 4256,
+      "geom_counts": {
+        "Point": 380,
+        "LineString": 3876
+      }
+    },
+    {
+      "slug": "pipe_dcp",
+      "title": "DCP NM pipelines",
+      "path": [
+        "3rd party",
+        "DCP Lines.kmz",
+        "DCP_NM_Active_12132021"
+      ],
+      "default_on": false,
+      "file": "pipe_dcp.geojson",
+      "size_kb": 1279.7,
+      "feature_count": 7791,
+      "geom_counts": {
+        "LineString": 7791
+      }
+    },
+    {
+      "slug": "pipe_roc_bb",
+      "title": "ROC N BB line",
+      "path": [
+        "3rd party",
+        "ROC N BB line.kmz"
+      ],
+      "default_on": false,
+      "file": "pipe_roc_bb.geojson",
+      "size_kb": 0.5,
+      "feature_count": 1,
+      "geom_counts": {
+        "LineString": 1
+      }
+    },
+    {
+      "slug": "unit_outlines",
+      "title": "Unit outlines",
+      "path": [
+        "Demarkations",
+        "UNIT OUTLINES.kmz",
+        "UNIT OUTLINES"
+      ],
+      "default_on": false,
+      "file": "unit_outlines.geojson",
+      "size_kb": 3.8,
+      "feature_count": 4,
+      "geom_counts": {
+        "Polygon": 4
+      }
+    },
+    {
+      "slug": "surface_owners_lea",
+      "title": "Surface owners (Lea County)",
+      "path": [
+        "Demarkations",
+        "Surface Owners (Lea CAD)",
+        "Shannon Lathrop - Sept2020Parcels"
+      ],
+      "default_on": false,
+      "file": "surface_owners_lea.geojson",
+      "size_kb": 1808.6,
+      "feature_count": 5558,
+      "geom_counts": {
+        "Polygon": 5512,
+        "GeometryCollection": 46
+      }
+    },
+    {
+      "slug": "survey_grid",
+      "title": "Counties / TWN-RNG-Section",
+      "path": [
+        "Demarkations",
+        "Counties-TWN-RNG-Section.kmz",
+        "Counties-TWN-RNG-Section"
+      ],
+      "default_on": false,
+      "file": "survey_grid.geojson",
+      "size_kb": 989.8,
+      "feature_count": 5811,
+      "geom_counts": {
+        "Point": 2926,
+        "LineString": 2885
+      }
+    },
+    {
+      "slug": "state_lease_outside",
+      "title": "State lease gas wells outside units",
+      "path": [
+        "State Lease Gas Wells Outside Units (<10 mcfd)"
+      ],
+      "default_on": false,
+      "file": "state_lease_outside.geojson",
+      "size_kb": 7.2,
+      "feature_count": 27,
+      "geom_counts": {
+        "Point": 27
+      }
+    }
+  ]
+}
